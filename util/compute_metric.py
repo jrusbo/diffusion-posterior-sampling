@@ -28,6 +28,9 @@ def main():
     lpips_list = []
 
     n_images = len(list(label_root.glob('*.png')))
+
+    assert n_images > 0, "empty file"
+
     for idx in tqdm(range(n_images)):
         fname = str(idx).zfill(5)
 
