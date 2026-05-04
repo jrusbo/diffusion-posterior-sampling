@@ -470,7 +470,7 @@ def extract_and_expand(array, time, target):
 def expand_as(array, target):
     if isinstance(array, np.ndarray):
         array = torch.from_numpy(array)
-    elif isinstance(array, np.float):
+    elif isinstance(array, (float, np.floating)):
         array = torch.tensor([array])
    
     while array.ndim < target.ndim:

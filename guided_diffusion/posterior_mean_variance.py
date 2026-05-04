@@ -28,7 +28,6 @@ def get_mean_processor(name: str, **kwargs):
 
 class MeanProcessor(ABC):
     """Predict x_start and calculate mean value"""
-    @abstractmethod
     def __init__(self, betas, dynamic_threshold, clip_denoised):
         self.dynamic_threshold = dynamic_threshold
         self.clip_denoised = clip_denoised
@@ -148,7 +147,6 @@ def get_var_processor(name: str, **kwargs):
     return __MODEL_VAR_PROCESSOR__[name](**kwargs)
 
 class VarianceProcessor(ABC):
-    @abstractmethod
     def __init__(self, betas):
         pass
 
@@ -159,6 +157,7 @@ class VarianceProcessor(ABC):
 @register_var_processor(name='fixed_small')
 class FixedSmallVarianceProcessor(VarianceProcessor):
     def __init__(self, betas):
+        super().__init__(betas)
         alphas = 1.0 - betas
         alphas_cumprod = np.cumprod(alphas, axis=0)
         alphas_cumprod_prev = np.append(1.0, alphas_cumprod[:-1])
@@ -179,6 +178,7 @@ class FixedSmallVarianceProcessor(VarianceProcessor):
 @register_var_processor(name='fixed_large')
 class FixedLargeVarianceProcessor(VarianceProcessor):
     def __init__(self, betas):
+        super().__init__(betas)
         self.betas = betas
 
         alphas = 1.0 - betas
@@ -201,7 +201,7 @@ class FixedLargeVarianceProcessor(VarianceProcessor):
 @register_var_processor(name='learned')
 class LearnedVarianceProcessor(VarianceProcessor):
     def __init__(self, betas):
-        pass
+        super().__init__(betas)
 
     def get_variance(self, x, t):
         model_log_variance = x
@@ -211,6 +211,7 @@ class LearnedVarianceProcessor(VarianceProcessor):
 @register_var_processor(name='learned_range')
 class LearnedRangeVarianceProcessor(VarianceProcessor):
     def __init__(self, betas):
+        super().__init__(betas)
         self.betas = betas
 
         alphas = 1.0 - betas
@@ -255,7 +256,7 @@ def extract_and_expand(array, time, target):
 def expand_as(array, target):
     if isinstance(array, np.ndarray):
         array = torch.from_numpy(array)
-    elif isinstance(array, np.float):
+    elif isinstance(array, (float, np.floating)):
         array = torch.tensor([array])
    
     while array.ndim < target.ndim:

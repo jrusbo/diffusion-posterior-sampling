@@ -11,17 +11,13 @@ In this work, we extend diffusion solvers to efficiently handle general noisy (n
 
 
 ## Prerequisites
-- python 3.8
+- python 3.13
 
-- pytorch 1.11.0
+- uv
 
-- CUDA 11.3.1
+- CUDA 13.0
 
-- nvidia-docker (if you use GPU in docker container)
-
-It is okay to use lower version of CUDA with proper pytorch version.
-
-Ex) CUDA 10.2 with pytorch 1.7.0
+The runtime dependencies are pinned in `pyproject.toml` for reproducibility.
 
 <br />
 
@@ -51,9 +47,12 @@ mv {DOWNLOAD_DIR}/ffqh_10m.pt ./models/
 
 
 ### 3) Set environment
-### [Option 1] Local environment setting
+This repository expects two external repositories next to the project root:
 
-We use the external codes for motion-blurring and non-linear deblurring.
+- `bkse` for non-linear deblurring
+- `motionblur` for motion blur operators
+
+Clone them beside this repo before running inference.
 
 ```
 git clone https://github.com/VinAIResearch/blur-kernel-space-exploring bkse
@@ -61,32 +60,21 @@ git clone https://github.com/VinAIResearch/blur-kernel-space-exploring bkse
 git clone https://github.com/LeviBorodenko/motionblur motionblur
 ```
 
-Install dependencies
+Create a Python 3.13 environment and install the pinned dependencies with `uv`.
 
 ```
-conda create -n DPS python=3.8
+uv venv --python 3.13
 
-conda activate DPS
-
-pip install -r requirements.txt
-
-pip install torch==1.11.0+cu113 torchvision==0.12.0+cu113 torchaudio==0.11.0 --extra-index-url https://download.pytorch.org/whl/cu113
+uv sync
 ```
 
-<br />
+`uv sync` uses `uv.lock` to install the exact resolved versions for reproducibility.
+Use `uv sync --locked` if you want to fail whenever the lock file is out of date.
 
-### [Option 2] Build Docker image
-
-Install docker engine, GPU driver and proper cuda before running the following commands.
-
-Dockerfile already contains command to clone external codes. You don't have to clone them again.
-
---gpus=all is required to use local GPU device (Docker >= 19.03)
+If you already activated an environment and want `uv` to install into it, use:
 
 ```
-docker build -t dps-docker:latest .
-
-docker run -it --rm --gpus=all dps-docker
+uv sync --active
 ```
 
 <br />

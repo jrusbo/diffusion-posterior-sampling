@@ -3,8 +3,8 @@
 from abc import ABC, abstractmethod
 from functools import partial
 import yaml
+import torch
 from torch.nn import functional as F
-from torchvision import torch
 from motionblur.motionblur import Kernel
 
 from util.resizer import Resizer
@@ -57,16 +57,16 @@ class DenoiseOperator(LinearOperator):
     def __init__(self, device):
         self.device = device
     
-    def forward(self, data):
+    def forward(self, data, **kwargs):
         return data
 
-    def transpose(self, data):
+    def transpose(self, data, **kwargs):
         return data
     
-    def ortho_project(self, data):
+    def ortho_project(self, data, **kwargs):
         return data
 
-    def project(self, data):
+    def project(self, data, **kwargs):
         return data
 
 
@@ -188,7 +188,7 @@ class NonlinearBlurOperator(NonLinearOperator):
             model_path = opt["pretrained"]
         blur_model = KernelWizard(opt)
         blur_model.eval()
-        blur_model.load_state_dict(torch.load(model_path)) 
+        blur_model.load_state_dict(torch.load(model_path, map_location=self.device, weights_only=False))
         blur_model = blur_model.to(self.device)
         return blur_model
     
