@@ -1,0 +1,22 @@
+conditioning:
+  method: adaptive_ps
+  params:
+    eta_min: 0.1
+    eta_max: 0.8
+    num_timesteps: 1000
+
+data:
+  name: ffhq
+  root: ./data/samples
+
+measurement:
+  operator:
+    name: motion_blur
+    kernel_size: 61
+    intensity: 0.5
+
+  noise: 
+    name: gaussian
+    sigma: 0.05
+
+# uv run sample_condition.py --model_config=configs/model_config.yaml --diffusion_config=configs/diffusion_config.yaml --task_config=configs/motion_deblur_adaptive_config.yaml --save_dir=./results/adaptive

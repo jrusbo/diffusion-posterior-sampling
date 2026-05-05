@@ -191,11 +191,21 @@ class GaussianDiffusion:
             noisy_measurement = self.q_sample(measurement, t=time)
 
             # TODO: how can we handle argument for different condition method?
-            img, distance = measurement_cond_fn(x_t=out['sample'],
-                                      measurement=measurement,
-                                      noisy_measurement=noisy_measurement,
-                                      x_prev=img,
-                                      x_0_hat=out['pred_xstart'])
+            
+            # img, distance = measurement_cond_fn(x_t=out['sample'],
+            #                           measurement=measurement,
+            #                           noisy_measurement=noisy_measurement,
+            #                           x_prev=img,
+            #                           x_0_hat=out['pred_xstart'])
+            
+            img, distance = measurement_cond_fn(
+                x_t=out['sample'],
+                measurement=measurement,
+                noisy_measurement=noisy_measurement,
+                x_prev=img,
+                x_0_hat=out['pred_xstart'],
+                t=time
+            )
             img = img.detach_()
            
             pbar.set_postfix({'distance': distance.item()}, refresh=False)
