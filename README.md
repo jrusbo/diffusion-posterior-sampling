@@ -88,8 +88,13 @@ python3 sample_condition.py \
 --task_config={TASK-CONFIG};
 ```
 
-
 :speaker: For imagenet, use configs/imagenet_model_config.yaml
+
+```
+python3 .\util\compute_metric.py \
+--device=cuda \
+--task=gaussian_deblur;
+```
 
 <br />
 
