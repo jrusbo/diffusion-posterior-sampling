@@ -1,0 +1,17 @@
+conditioning:
+  method: rl_ps
+  params: {} # No manual scale or eta bounds are needed; the RL agent handles this!
+
+data:
+  name: ffhq
+  root: ./data/samples
+
+measurement:
+  operator:
+    name: motion_blur
+    kernel_size: 61
+    intensity: 0.5
+
+  noise:
+    name: gaussian
+    sigma: 0.05

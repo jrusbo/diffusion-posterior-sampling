@@ -86,7 +86,33 @@ class PosteriorSampling(ConditioningMethod):
         norm_grad, norm = self.grad_and_value(x_prev=x_prev, x_0_hat=x_0_hat, measurement=measurement, **kwargs)
         x_t -= norm_grad * self.scale
         return x_t, norm
-        
+
+@register_conditioning_method(name='rl_ps')
+class RLPosteriorSampling(ConditioningMethod):
+    def __init__(self, operator, noiser, **kwargs):
+        super().__init__(operator, noiser)
+
+    def conditioning(self, x_prev, x_t, x_0_hat, measurement, rl_eta=None, **kwargs):
+        # We expect the diffusion loop to pass 'rl_eta' from the policy network
+        if rl_eta is None:
+            raise ValueError("rl_eta must be provided by the RL policy network.")
+
+        norm_grad, norm = self.grad_and_value(
+            x_prev=x_prev,
+            x_0_hat=x_0_hat,
+            measurement=measurement,
+            **kwargs
+        )
+
+        # Reshape rl_eta for broadcasting across the batch/channels
+        while rl_eta.ndim < norm_grad.ndim:
+            rl_eta = rl_eta.unsqueeze(-1)
+
+        # Apply the dynamically learned step size!
+        x_t = x_t - rl_eta * norm_grad
+
+        return x_t, norm
+
 @register_conditioning_method(name='adaptive_ps')
 class AdaptivePosteriorSampling(ConditioningMethod):
     def __init__(self, operator, noiser, **kwargs):

@@ -173,19 +173,47 @@ class GaussianDiffusion:
                       measurement,
                       measurement_cond_fn,
                       record,
-                      save_root):
+                      save_root,
+                      rl_mode=False,
+                      policy_net=None,
+                      reward_fn=None,
+                      max_steps=None,
+                      step_penalty=0.01
+                      ):
         """
         The function used for sampling from noise.
         """ 
         img = x_start
         device = x_start.device
+        log_probs = []
+        rewards = []
 
-        pbar = tqdm(list(range(self.num_timesteps))[::-1])
+        timesteps = list(range(self.num_timesteps))[::-1]
+
+        if rl_mode and max_steps is not None:
+            # Pick a random starting point in the diffusion chain
+            start_idx = torch.randint(0, len(timesteps) - max_steps, (1,)).item()
+            timesteps = timesteps[start_idx: start_idx + max_steps]
+
+        current_error = torch.tensor([1.0] * img.shape[0], device=device)  # Initial dummy error
+
+        pbar = tqdm(timesteps)
         for idx in pbar:
             time = torch.tensor([idx] * img.shape[0], device=device)
-            
+
+            sample_kwargs = {}
+            cond_kwargs = {}
+            if rl_mode and policy_net is not None:
+                t_norm = time.float() / self.num_timesteps
+                state = torch.stack([t_norm, current_error], dim=-1)
+
+                eta, log_prob = policy_net.sample_eta(state)
+                log_probs.append(log_prob.sum())
+                sample_kwargs['eta'] = eta
+                cond_kwargs['rl_eta'] = eta
+
             img = img.requires_grad_()
-            out = self.p_sample(x=img, t=time, model=model)
+            out = self.p_sample(x=img, t=time, model=model, **sample_kwargs)
             
             # Give condition.
             noisy_measurement = self.q_sample(measurement, t=time)
@@ -204,9 +232,17 @@ class GaussianDiffusion:
                 noisy_measurement=noisy_measurement,
                 x_prev=img,
                 x_0_hat=out['pred_xstart'],
-                t=time
+                t=time,
+                **cond_kwargs
             )
             img = img.detach_()
+
+            current_error = torch.full_like(time, distance.item(), dtype=torch.float32)
+
+            if rl_mode and reward_fn is not None:
+                # Calculate reward on the PREDICTED clean image, minus the step penalty
+                step_reward = reward_fn(out['pred_xstart'], measurement) - step_penalty
+                rewards.append(step_reward)
            
             pbar.set_postfix({'distance': distance.item()}, refresh=False)
             if record:
@@ -214,9 +250,18 @@ class GaussianDiffusion:
                     file_path = os.path.join(save_root, f"progress/x_{str(idx).zfill(4)}.png")
                     plt.imsave(file_path, clear_color(img))
 
+        if rl_mode:
+            # Check if we actually collected rewards (i.e., we are Training, not Inferring)
+            if len(rewards) > 0:
+                start_t = timesteps[0]
+                return img, torch.stack(log_probs).sum(), torch.stack(rewards).sum(), start_t
+            else:
+                # During inference, we don't care about log_probs or rewards
+                return img
+
         return img       
         
-    def p_sample(self, model, x, t):
+    def p_sample(self, model, x, t, **kwargs):
         raise NotImplementedError
 
     def p_mean_variance(self, model, x, t):
@@ -372,7 +417,7 @@ class _WrappedModel:
 
 @register_sampler(name='ddpm')
 class DDPM(SpacedDiffusion):
-    def p_sample(self, model, x, t):
+    def p_sample(self, model, x, t, **kwargs):
         out = self.p_mean_variance(model, x, t)
         sample = out['mean']
 
@@ -385,13 +430,17 @@ class DDPM(SpacedDiffusion):
 
 @register_sampler(name='ddim')
 class DDIM(SpacedDiffusion):
-    def p_sample(self, model, x, t, eta=0.0):
+    def p_sample(self, model, x, t, eta=0.0, **kwargs):
         out = self.p_mean_variance(model, x, t)
         
         eps = self.predict_eps_from_x_start(x, t, out['pred_xstart'])
         
         alpha_bar = extract_and_expand(self.alphas_cumprod, t, x)
         alpha_bar_prev = extract_and_expand(self.alphas_cumprod_prev, t, x)
+
+        if isinstance(eta, torch.Tensor):
+            eta = eta.view(-1, 1, 1, 1)
+
         sigma = (
             eta
             * torch.sqrt((1 - alpha_bar_prev) / (1 - alpha_bar))
