@@ -3,6 +3,7 @@ import argparse
 
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 METRICS = ["psnr", "ssim", "lpips"]
@@ -119,6 +120,8 @@ def main():
     else:
         fig.suptitle("Progress Metrics vs Step", fontsize=14)
 
+    for ax in np.ravel(axes):
+        ax.xaxis.set_inverted(True)
     fig.tight_layout()
 
     if args.save_path is not None:
