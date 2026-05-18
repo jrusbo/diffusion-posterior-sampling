@@ -1,12 +1,12 @@
-import numpy as np
 import torch
 import scipy
+import scipy.ndimage
 import torch.nn.functional as F
 from torch import nn
 from torch.autograd import Variable
-import matplotlib.pyplot as plt
+
 from motionblur.motionblur import Kernel
-from .fastmri_utils import fft2c_new, ifft2c_new
+from fastmri_utils import fft2c_new, ifft2c_new
 
 
 """
@@ -14,13 +14,19 @@ Helper functions for new types of inverse problems
 """
 
 def fft2(x):
-  """ FFT with shifting DC to the center of the image"""
-  return torch.fft.fftshift(torch.fft.fft2(x), dim=[-1, -2])
+  """ FFT with shifting DC to the center of the image. Standard centered FFT. """
+  x = torch.fft.ifftshift(x, dim=[-1, -2])
+  x = torch.fft.fft2(x, norm='ortho')
+  x = torch.fft.fftshift(x, dim=[-1, -2])
+  return x
 
 
 def ifft2(x):
-  """ IFFT with shifting DC to the corner of the image prior to transform"""
-  return torch.fft.ifft2(torch.fft.ifftshift(x, dim=[-1, -2]))
+  """ IFFT with shifting DC to the corner of the image prior to transform. Standard centered IFFT. """
+  x = torch.fft.ifftshift(x, dim=[-1, -2])
+  x = torch.fft.ifft2(x, norm='ortho')
+  x = torch.fft.fftshift(x, dim=[-1, -2])
+  return x
 
 
 def fft2_m(x):
@@ -38,6 +44,8 @@ def ifft2_m(x):
 
 
 def clear(x):
+    if x.ndim == 4:
+        x = x[0]
     x = x.detach().cpu().squeeze().numpy()
     return normalize_np(x)
 
@@ -45,6 +53,11 @@ def clear(x):
 def clear_color(x):
     if torch.is_complex(x):
         x = torch.abs(x)
+    
+    # If batched, take the first sample
+    if x.ndim == 4:
+        x = x[0]
+        
     x = x.detach().cpu().squeeze().numpy()
     return normalize_np(np.transpose(x, (1, 2, 0)))
 
@@ -52,7 +65,9 @@ def clear_color(x):
 def normalize_np(img):
     """ Normalize img in arbitrary range to [0, 1] """
     img -= np.min(img)
-    img /= np.max(img)
+    max_val = np.max(img)
+    if max_val > 0:
+        img /= max_val
     return img
 
 
@@ -342,23 +357,55 @@ def create_penalty_mask(k_size, penalty_scale):
     """Generate a mask of weights penalizing values close to the boundaries"""
     center_size = k_size // 2 + k_size % 2
     mask = create_gaussian(size=k_size, sigma1=k_size, is_tensor=False)
-    mask = 1 - mask / np.max(mask)
+    max_val = np.max(mask)
+    if max_val > 0:
+        mask = 1 - mask / max_val
     margin = (k_size - center_size) // 2 - 1
     mask[margin:-margin, margin:-margin] = 0
     return penalty_scale * mask
 
 
-def create_gaussian(size, sigma1, sigma2=-1, is_tensor=False):
+def create_gaussian(size, sigma1, sigma2=-1, is_tensor=False, device='cuda'):
     """Return a Gaussian"""
     func1 = [np.exp(-z ** 2 / (2 * sigma1 ** 2)) / np.sqrt(2 * np.pi * sigma1 ** 2) for z in range(-size // 2 + 1, size // 2 + 1)]
     func2 = func1 if sigma2 == -1 else [np.exp(-z ** 2 / (2 * sigma2 ** 2)) / np.sqrt(2 * np.pi * sigma2 ** 2) for z in range(-size // 2 + 1, size // 2 + 1)]
-    return torch.FloatTensor(np.outer(func1, func2)).cuda() if is_tensor else np.outer(func1, func2)
+    res = np.outer(func1, func2)
+    if is_tensor:
+        return torch.FloatTensor(res).to(device)
+    else:
+        return res
 
 
 def total_variation_loss(img, weight):
-    tv_h = ((img[:, :, 1:, :] - img[:, :, :-1, :]).pow(2)).mean()
-    tv_w = ((img[:, :, :, 1:] - img[:, :, :, :-1]).pow(2)).mean()
+    # Per-sample TV loss: calculate squared differences and mean across H, W, C
+    # This ensures the loss is independent of batch size and provides a stable signal.
+    tv_h = ((img[:, :, 1:, :] - img[:, :, :-1, :]).pow(2)).mean(dim=(1, 2, 3))
+    tv_w = ((img[:, :, :, 1:] - img[:, :, :, :-1]).pow(2)).mean(dim=(1, 2, 3))
     return weight * (tv_h + tv_w)
+
+
+def calculate_psnr(img1, img2, data_range=2.0):
+    """
+    Calculate PSNR between two images.
+    Default data_range is 2.0 assuming images are normalized to [-1, 1].
+    """
+    if img1.ndim == 4:
+        # Batched input: [B, C, H, W]
+        mse = torch.mean((img1 - img2) ** 2, dim=(1, 2, 3))
+    else:
+        mse = torch.mean((img1 - img2) ** 2)
+
+    # Perfect match: MSE is 0, PSNR is conventionally 100 or inf.
+    # We use a high constant (100) to avoid log10(0) without adding epsilon.
+    if torch.is_tensor(mse):
+        psnr = torch.full_like(mse, 100.0)
+        mask = mse > 0
+        psnr[mask] = 10 * torch.log10((data_range ** 2) / mse[mask])
+        return psnr
+    else:
+        if mse > 0:
+            return min(10 * np.log10((data_range ** 2) / mse), 100.0)
+        return 100.0
 
 
 if __name__ == '__main__':
