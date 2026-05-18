@@ -5,7 +5,6 @@ import argparse
 
 import matplotlib.pyplot as plt
 import lpips
-import numpy as np
 import torch
 
 def main():
@@ -55,7 +54,7 @@ def main():
         label_t = label_t.view(1, 3, h, w) * 2. - 1.
 
         lpips_d = loss_fn_vgg(recon_t, label_t)
-        lpips_list.append(lpips_d)
+        lpips_list.append(lpips_d.item())
 
     psnr_avg = sum(psnr_list) / len(psnr_list)
     ssim_avg = sum(ssim_list) / len(ssim_list)
