@@ -66,8 +66,11 @@ def main():
    
     # Load diffusion sampler
     sampler = create_sampler(**diffusion_config) 
-    sample_fn = partial(sampler.p_sample_loop, model=model, measurement_cond_fn=measurement_cond_fn)
-   
+
+    # SAFEGUARD: Ensure we are not using RL-specific conditioning in regular sampling
+    if task_config['conditioning']['method'] == 'rl_ps':
+        raise ValueError("Cannot use 'rl_ps' with sample_condition.py. Use sample_condition_rl.py instead.")
+
     # Working directory
     out_path = os.path.join(args.save_dir, measure_config['operator']['name'])
     os.makedirs(out_path, exist_ok=True)
@@ -93,12 +96,14 @@ def main():
         fname = str(i).zfill(5) + '.png'
         ref_img = ref_img.to(device)
 
-        # Exception) In case of inpainging,
-        if measure_config['operator'] ['name'] == 'inpainting':
+        # Prepare sample function for each image
+        current_measurement_cond_fn = measurement_cond_fn
+        
+        # Exception) In case of inpainting,
+        if measure_config['operator']['name'] == 'inpainting':
             mask = mask_gen(ref_img)
             mask = mask[:, 0, :, :].unsqueeze(dim=0)
-            measurement_cond_fn = partial(cond_method.conditioning, mask=mask)
-            sample_fn = partial(sample_fn, measurement_cond_fn=measurement_cond_fn)
+            current_measurement_cond_fn = partial(cond_method.conditioning, mask=mask)
 
             # Forward measurement model (Ax + n)
             y = operator.forward(ref_img, mask=mask)
@@ -111,7 +116,15 @@ def main():
          
         # Sampling
         x_start = torch.randn(ref_img.shape, device=device).requires_grad_()
-        sample = sample_fn(x_start=x_start, measurement=y_n, record=True, save_root=out_path)
+        sample = sampler.p_sample_loop(
+            model=model, 
+            x_start=x_start, 
+            measurement=y_n, 
+            measurement_cond_fn=current_measurement_cond_fn, 
+            operator=operator,
+            record=True, 
+            save_root=out_path
+        )
 
         plt.imsave(os.path.join(out_path, 'input', fname), clear_color(y_n))
         plt.imsave(os.path.join(out_path, 'label', fname), clear_color(ref_img))
