@@ -81,34 +81,37 @@ uv sync --active
 
 ### 4) Inference
 
+#### sample_condition.py
+
 ```
 uv run sample_condition.py \
 --model_config=configs/model_config.yaml \
 --diffusion_config=configs/diffusion_config.yaml \
---task_config={TASK-CONFIG};
+--task_config=configs/motion_deblur_config.yaml \
+--save_dir=./results/motion_blur_baseline \
+--num_runs=10
+```
+
+#### sample_condition_rl.py
+
+```
+uv run sample_condition_rl.py \
+--model_config=configs/model_config.yaml \
+--diffusion_config=configs/diffusion_config.yaml \
+--task_config=configs/motion_blur_rl_config.yaml \
+--policy_weights=models/optimized_eta_policy.pth \
+--save_dir=./results/motion_blur_rl \
+--num_runs=10
 ```
 
 :speaker: For imagenet, use configs/imagenet_model_config.yaml
 
-to compute the average metrics of a task:
-```
-uv run .\util\compute_metric.py \
---device=cuda \
---task=gaussian_deblur;
-```
+#### visualize_progress_metrics
 
-to compute the pregressive metrics of a task:
-```
-uv run .\util\compute_progress_metrics.py \
---device=cpu \
---task={task} \
---label={label_number};
-```
-
-to visualize:
 ```
 uv run .\util\visualize_progress_metrics.py \
---task={task};
+--task=motion_blur_rl/motion_blur \
+--task2=motion_blur_baseline/motion_blur
 ```
 
 <br />
