@@ -1,6 +1,8 @@
 from functools import partial
 import os
 import argparse
+from datetime import datetime
+from pathlib import Path
 import yaml
 
 import torch
@@ -11,7 +13,12 @@ from guided_diffusion.condition_methods import get_conditioning_method
 from guided_diffusion.measurements import get_noise, get_operator
 from guided_diffusion.unet import create_model
 from guided_diffusion.gaussian_diffusion import create_sampler
-from data.dataloader import get_dataset, get_dataloader
+from data.dataloader import get_dataset
+from util.compute_progress_metrics import (
+    aggregate_progress_metrics,
+    collect_progress_metrics,
+    save_progress_metrics,
+)
 from util.img_utils import clear_color, mask_generator
 from util.logger import get_logger
 
@@ -22,6 +29,16 @@ def load_yaml(file_path: str) -> dict:
     return config
 
 
+def get_ref_and_fname(dataset, dataset_index: int, device: torch.device):
+    if hasattr(dataset, 'fpaths'):
+        source_name = Path(dataset.fpaths[dataset_index]).stem
+    else:
+        source_name = str(dataset_index).zfill(5)
+    fname = f'{source_name}.png'
+    ref_img = dataset[dataset_index].unsqueeze(0).to(device)
+    return ref_img, fname
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_config', type=str)
@@ -29,6 +46,7 @@ def main():
     parser.add_argument('--task_config', type=str)
     parser.add_argument('--gpu', type=int, default=0)
     parser.add_argument('--save_dir', type=str, default='./results')
+    parser.add_argument('--num_runs', type=int, default=1, help='Run sampling multiple times and aggregate metrics')
     args = parser.parse_args()
    
     # logger
@@ -46,19 +64,17 @@ def main():
    
     #assert model_config['learn_sigma'] == diffusion_config['learn_sigma'], \
     #"learn_sigma must be the same for model and diffusion configuartion."
-    
     # Load model
     model = create_model(**model_config)
     model = model.to(device)
     model.eval()
 
-    # Prepare Operator and noise
+    # Prepare Operator, noise, and conditioning
     measure_config = task_config['measurement']
     operator = get_operator(device=device, **measure_config['operator'])
     noiser = get_noise(**measure_config['noise'])
     logger.info(f"Operation: {measure_config['operator']['name']} / Noise: {measure_config['noise']['name']}")
 
-    # Prepare conditioning method
     cond_config = task_config['conditioning']
     cond_method = get_conditioning_method(cond_config['method'], operator, noiser, **cond_config['params'])
     measurement_cond_fn = cond_method.conditioning
@@ -71,18 +87,15 @@ def main():
     if task_config['conditioning']['method'] == 'rl_ps':
         raise ValueError("Cannot use 'rl_ps' with sample_condition.py. Use sample_condition_rl.py instead.")
 
-    # Working directory
-    out_path = os.path.join(args.save_dir, measure_config['operator']['name'])
-    os.makedirs(out_path, exist_ok=True)
-    for img_dir in ['input', 'recon', 'progress', 'label']:
-        os.makedirs(os.path.join(out_path, img_dir), exist_ok=True)
+    task_name = measure_config['operator']['name']
+    task_root = os.path.join(args.save_dir, task_name)
+    os.makedirs(task_root, exist_ok=True)
 
     # Prepare dataloader
     data_config = task_config['data']
     transform = transforms.Compose([transforms.ToTensor(),
                                     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     dataset = get_dataset(**data_config, transforms=transform)
-    loader = get_dataloader(dataset, batch_size=1, num_workers=0, train=False)
 
     # Exception) In case of inpainting, we need to generate a mask 
     if measure_config['operator']['name'] == 'inpainting':
@@ -90,45 +103,83 @@ def main():
            **measure_config['mask_opt']
         )
         
-    # Do Inference
-    for i, ref_img in enumerate(loader):
-        logger.info(f"Inference for image {i}")
-        fname = str(i).zfill(5) + '.png'
-        ref_img = ref_img.to(device)
+    num_runs = max(args.num_runs, 1)
 
-        # Prepare sample function for each image
-        current_measurement_cond_fn = measurement_cond_fn
-        
-        # Exception) In case of inpainting,
-        if measure_config['operator']['name'] == 'inpainting':
-            mask = mask_gen(ref_img)
-            mask = mask[:, 0, :, :].unsqueeze(dim=0)
-            current_measurement_cond_fn = partial(cond_method.conditioning, mask=mask)
+    def build_run_root(run_index: int) -> str:
+        if num_runs <= 1:
+            return task_root
+        return os.path.join(args.save_dir, f'{task_name}_run{run_index:02d}')
 
-            # Forward measurement model (Ax + n)
-            y = operator.forward(ref_img, mask=mask)
-            y_n = noiser(y)
+    def run_single(run_root: str) -> str:
+        os.makedirs(run_root, exist_ok=True)
+        for img_dir in ['input', 'recon', 'progress', 'label']:
+            os.makedirs(os.path.join(run_root, img_dir), exist_ok=True)
 
-        else: 
-            # Forward measurement model (Ax + n)
-            y = operator.forward(ref_img)
-            y_n = noiser(y)
-         
-        # Sampling
-        x_start = torch.randn(ref_img.shape, device=device).requires_grad_()
-        sample = sampler.p_sample_loop(
-            model=model, 
-            x_start=x_start, 
-            measurement=y_n, 
-            measurement_cond_fn=current_measurement_cond_fn, 
-            operator=operator,
-            record=True, 
-            save_root=out_path
+        if num_runs > 1:
+            run_indices = torch.randperm(len(dataset)).tolist()
+        else:
+            run_indices = list(range(len(dataset)))
+
+        for i, dataset_index in enumerate(run_indices):
+            operator = get_operator(device=device, **measure_config['operator'])
+            cond_method = get_conditioning_method(cond_config['method'], operator, noiser, **cond_config['params'])
+            measurement_cond_fn = cond_method.conditioning
+            ref_img, fname = get_ref_and_fname(dataset, dataset_index, device)
+            logger.info(f"Inference for image {i} (dataset index {dataset_index}) -> {fname} in {os.path.basename(run_root)}")
+
+            sample_progress_root = os.path.join(run_root, 'progress', Path(fname).stem)
+            os.makedirs(sample_progress_root, exist_ok=True)
+
+            current_measurement_cond_fn = measurement_cond_fn
+
+            if measure_config['operator']['name'] == 'inpainting':
+                mask = mask_gen(ref_img)
+                mask = mask[:, 0, :, :].unsqueeze(dim=0)
+                current_measurement_cond_fn = partial(cond_method.conditioning, mask=mask)
+
+                y = operator.forward(ref_img, mask=mask)
+                y_n = noiser(y)
+            else:
+                y = operator.forward(ref_img)
+                y_n = noiser(y)
+
+            x_start = torch.randn(ref_img.shape, device=device).requires_grad_()
+            sample = sampler.p_sample_loop(
+                model=model,
+                x_start=x_start,
+                measurement=y_n,
+                measurement_cond_fn=current_measurement_cond_fn,
+                operator=operator,
+                record=True,
+                save_root=sample_progress_root,
+                ref_img=ref_img,
+                conditioning_method=cond_method,
+            )
+
+            plt.imsave(os.path.join(run_root, 'input', fname), clear_color(y_n))
+            plt.imsave(os.path.join(run_root, 'label', fname), clear_color(ref_img))
+            plt.imsave(os.path.join(run_root, 'recon', fname), clear_color(sample))
+
+        metrics_csv = os.path.join(run_root, 'progress_metrics.csv')
+        progress_df = collect_progress_metrics(
+            progress_root=Path(os.path.join(run_root, 'progress')),
+            label_root=Path(os.path.join(run_root, 'label')),
+            eta_csv=Path(os.path.join(run_root, 'eta_per_step.csv')),
+            device=device,
         )
+        save_progress_metrics(progress_df, Path(metrics_csv))
+        return metrics_csv
 
-        plt.imsave(os.path.join(out_path, 'input', fname), clear_color(y_n))
-        plt.imsave(os.path.join(out_path, 'label', fname), clear_color(ref_img))
-        plt.imsave(os.path.join(out_path, 'recon', fname), clear_color(sample))
+    run_metrics_csvs = []
+    for run_index in range(1, num_runs + 1):
+        run_root = build_run_root(run_index)
+        logger.info(f"Starting run {run_index}/{num_runs}: {run_root}")
+        run_metrics_csvs.append(run_single(run_root))
+
+    if num_runs > 1:
+        aggregate_csv = Path(task_root) / 'progress_metrics.csv'
+        aggregate_df = aggregate_progress_metrics(run_metrics_csvs, output_csv=aggregate_csv)
+        logger.info(f"Saved aggregated progress metrics to {aggregate_csv} ({len(aggregate_df)} rows)")
 
 if __name__ == '__main__':
     main()
