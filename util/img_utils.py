@@ -1,6 +1,7 @@
 import torch
 import scipy
 import scipy.ndimage
+import numpy as np
 import torch.nn.functional as F
 from torch import nn
 from torch.autograd import Variable
