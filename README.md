@@ -82,14 +82,34 @@ uv sync --active
 ### 4) Inference
 
 ```
-python3 sample_condition.py \
+uv run sample_condition.py \
 --model_config=configs/model_config.yaml \
 --diffusion_config=configs/diffusion_config.yaml \
 --task_config={TASK-CONFIG};
 ```
 
-
 :speaker: For imagenet, use configs/imagenet_model_config.yaml
+
+to compute the average metrics of a task:
+```
+uv run .\util\compute_metric.py \
+--device=cuda \
+--task=gaussian_deblur;
+```
+
+to compute the pregressive metrics of a task:
+```
+uv run .\util\compute_progress_metrics.py \
+--device=cpu \
+--task={task} \
+--label={label_number};
+```
+
+to visualize:
+```
+uv run .\util\visualize_progress_metrics.py \
+--task={task};
+```
 
 <br />
 

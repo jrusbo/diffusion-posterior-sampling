@@ -9,7 +9,7 @@ import torch
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--device', type=str, default='cpu')
+    parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--task', type=str, default='gaussian_deblur')
     parser.add_argument('--label_root', type=str, default=None)
     parser.add_argument('--recon_root', type=str, default=None)
