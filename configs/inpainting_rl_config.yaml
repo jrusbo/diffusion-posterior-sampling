@@ -1,0 +1,53 @@
+conditioning:
+  method: rl_ps
+  params: {} # No manual scale or eta bounds are needed; the RL agent handles this!
+
+rl_config:
+  # --- Training Loop Control ---
+  num_episodes: 50000        # Total number of images/batches to train on
+  rl_lr: 1.0e-4              # Learning rate for the Adam optimizer
+  max_steps: 100             # Number of diffusion steps (randomly sampled) per episode
+  batch_size: 1              # Number of reference images processed in parallel per episode
+  num_workers: 0             # CPU threads for data loading
+  pin_memory: true           # Speed up GPU transfer for data
+  save_interval: 500         # Save and upload the policy to WandB every X episodes
+
+  
+  # --- REINFORCE Algorithm Parameters ---
+  baseline_decay: 0.99       # Momentum for the timestep-dependent reward baseline (higher = more stable)
+  entropy_beta: 0.01         # Weight of the entropy bonus (higher = more exploration)
+  grad_clip: 1.0             # Max norm for gradients to prevent exploding updates
+  
+  # --- Policy Network Architecture ---
+  hidden_dim: 128            # Width of the MLP layers in the policy
+  eta_max: 5.0               # The maximum possible guidance scale (policy outputs 0 to eta_max)
+  policy_std: 0.3            # Standard deviation for Gaussian exploration (noise added to actions)
+  
+  # --- Reward Function Weights ---
+  reward_weights:
+    psnr: 1.0                # Weight for Peak Signal-to-Noise Ratio (image quality)
+    consistency: 500.0       # Weight for Data Consistency MSE (fidelity to measurement)
+    tv: 5.0                  # Weight for Total Variation (smoothness/naturalness)
+  
+  # --- State Space Normalization ---
+  # Normalizes log(MSE) which is usually -5 to -15 into a ~[0, 1] range
+  state_norm:
+    log_consistency_offset: 15.0
+    log_consistency_scale: 0.1
+
+data:
+  name: ffhq
+  root: ./data/samples
+
+measurement:
+  operator:
+    name: inpainting
+  mask_opt:
+    mask_type: random
+    # mask_len_range: !!python/tuple [128, 129]  # for box
+    mask_prob_range: !!python/tuple [0.3, 0.7]  # for random
+    image_size: 256
+
+  noise:
+    name: gaussian
+    sigma: 0.05

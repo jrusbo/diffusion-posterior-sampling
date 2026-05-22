@@ -192,13 +192,15 @@ class GaussianDiffusion:
                       max_steps=None,
                       ref_img=None,
                       conditioning_method=None,
-                      operator=None
+                      operator=None,
+                      operator_kwargs=None
                       ):
         """
         The function used for sampling from noise.
         """ 
         device = x_start.device
         img = x_start
+        operator_kwargs = operator_kwargs or {}
 
         if rl_mode and max_steps is not None and ref_img is not None:
             # RL TRAINING MODE: Sequential loop over independent timesteps for visibility & OOM safety
@@ -224,7 +226,7 @@ class GaussianDiffusion:
                 # 4. State Space: [t_norm, log_consistency]
                 # Use observable consistency instead of ground-truth PSNR
                 with torch.no_grad():
-                    sim_y = operator.forward(out['pred_xstart'])
+                    sim_y = operator.forward(out['pred_xstart'], **operator_kwargs)
                     # Per-sample MSE consistency
                     consistency = (sim_y - measurement).pow(2).mean(dim=list(range(1, sim_y.ndim)))
                     log_consistency = torch.log(consistency + 1e-6)
@@ -294,7 +296,7 @@ class GaussianDiffusion:
             if rl_mode and policy_net is not None:
                 # Calculate observable consistency for the policy state
                 with torch.no_grad():
-                    sim_y = operator.forward(out['pred_xstart'])
+                    sim_y = operator.forward(out['pred_xstart'], **operator_kwargs)
                     # Per-sample MSE consistency
                     consistency = (sim_y - measurement).pow(2).mean(dim=list(range(1, sim_y.ndim)))
                     log_consistency = torch.log(consistency + 1e-6)

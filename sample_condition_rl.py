@@ -206,6 +206,7 @@ def main():
                 ref_img=ref_img,
                 conditioning_method=cond_method,
                 operator=operator,
+                operator_kwargs={'mask': mask} if measure_config['operator']['name'] == 'inpainting' else None,
             )
 
             plt.imsave(os.path.join(run_root, 'input', fname), clear_color(y_n))
