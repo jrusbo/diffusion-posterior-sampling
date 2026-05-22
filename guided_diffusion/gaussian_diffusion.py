@@ -1,3 +1,4 @@
+import csv
 import math
 import os
 import matplotlib.pyplot as plt
@@ -27,6 +28,16 @@ def get_sampler(name: str):
     if __SAMPLER__.get(name, None) is None:
         raise NameError(f"Name {name} is not defined!")
     return __SAMPLER__[name]
+
+
+def _write_eta_csv(csv_path, eta_rows):
+    if len(eta_rows) == 0:
+        return
+
+    with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=['step', 'eta'])
+        writer.writeheader()
+        writer.writerows(eta_rows)
 
 
 def create_sampler(sampler,
@@ -180,6 +191,7 @@ class GaussianDiffusion:
                       reward_fn=None,
                       max_steps=None,
                       ref_img=None,
+                      conditioning_method=None,
                       operator=None
                       ):
         """
@@ -263,6 +275,7 @@ class GaussianDiffusion:
         timesteps = list(range(self.num_timesteps))[::-1]
 
         inf_pbar = tqdm(timesteps)
+        eta_rows = []
         for idx in inf_pbar:
             inf_pbar.set_description_str(f"Sampling (t={idx:03d})")
             time = torch.tensor([idx] * img.shape[0], device=device)
@@ -272,6 +285,12 @@ class GaussianDiffusion:
             
             cond_kwargs = {}
             current_psnr_val = 0.0
+            current_eta_val = None
+
+            if ref_img is not None:
+                with torch.no_grad():
+                    current_psnr_val = calculate_psnr(img, ref_img).mean().item()
+
             if rl_mode and policy_net is not None:
                 # Calculate observable consistency for the policy state
                 with torch.no_grad():
@@ -279,14 +298,18 @@ class GaussianDiffusion:
                     # Per-sample MSE consistency
                     consistency = (sim_y - measurement).pow(2).mean(dim=list(range(1, sim_y.ndim)))
                     log_consistency = torch.log(consistency + 1e-6)
-                    
-                    if ref_img is not None:
-                        current_psnr_val = calculate_psnr(img, ref_img).mean().item()
 
                 t_norm = time.float() / self.num_timesteps
                 state = torch.stack([t_norm, log_consistency], dim=-1)
                 eta, log_prob, entropy = policy_net.sample_eta(state, deterministic=True)
                 cond_kwargs['rl_eta'] = eta
+                current_eta_val = eta.mean().item()
+            elif conditioning_method is not None:
+                if hasattr(conditioning_method, 'get_adaptive_eta'):
+                    eta = conditioning_method.get_adaptive_eta(time)
+                    current_eta_val = eta.mean().item()
+                elif hasattr(conditioning_method, 'scale'):
+                    current_eta_val = float(conditioning_method.scale)
 
             noisy_measurement = self.q_sample(measurement, t=time)
             img, distance = measurement_cond_fn(
@@ -301,11 +324,24 @@ class GaussianDiffusion:
             img = img.detach_()
             distance = distance.detach()
 
-            pbar.set_postfix(dist=f"{distance.mean().item():.2f}", psnr=f"{current_psnr_val:.2f}")
+            postfix = {
+                'dist': f"{distance.mean().item():.2f}",
+                'psnr': f"{current_psnr_val:.2f}",
+            }
+            if current_eta_val is not None:
+                postfix['eta'] = f"{current_eta_val:.3f}"
+            inf_pbar.set_postfix(**postfix)
+
+            if current_eta_val is not None:
+                eta_rows.append({'step': idx, 'eta': current_eta_val})
 
             if record and idx % 10 == 0:
-                file_path = os.path.join(save_root, f"progress/x_{str(idx).zfill(4)}.png")
+                os.makedirs(save_root, exist_ok=True)
+                file_path = os.path.join(save_root, f"x_{str(idx).zfill(4)}.png")
                 plt.imsave(file_path, clear_color(img))
+
+        if record and len(eta_rows) > 0:
+            _write_eta_csv(os.path.join(save_root, 'eta_per_step.csv'), eta_rows)
 
         return img       
         
