@@ -125,8 +125,8 @@ class RLPosteriorSampling(ConditioningMethod):
 
         return x_t, norm
 
-@register_conditioning_method(name='adaptive_ps')
-class AdaptivePosteriorSampling(ConditioningMethod):
+@register_conditioning_method(name='sin_ps')
+class SinPosteriorSampling(ConditioningMethod):
     def __init__(self, operator, noiser, **kwargs):
         super().__init__(operator, noiser)
         self.eta_min = kwargs.get('eta_min', 0.05)

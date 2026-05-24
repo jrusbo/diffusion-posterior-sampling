@@ -87,8 +87,8 @@ def main():
     save_path = os.path.join(model_save_dir, "optimized_eta_policy.pth")
 
     # SAFEGUARD: Ensure we are using our new RL conditioning method
-    if task_config['conditioning']['method'] == 'adaptive_ps':
-        raise ValueError("Cannot train RL using 'adaptive_ps'. Change your yaml config to 'rl_ps'.")
+    if task_config['conditioning']['method'] != 'rl_ps':
+        raise ValueError(f"Cannot train RL using {task_config['conditioning']['method']}. Change your yaml config to 'rl_ps'.")
 
     # 2. Setup Diffusion Model & Operators (Identical to sample_condition.py)
     model = create_model(**model_config).to(device)
