@@ -1,8 +1,9 @@
 conditioning:
-  method: sin_ps
+  method: exp_ps
   params:
     eta_min: 0
     eta_max: 5
+    soft: 0.005
     num_timesteps: 1000
 
 data:
@@ -18,5 +19,3 @@ measurement:
   noise: 
     name: gaussian
     sigma: 0.05
-
-# uv run sample_condition.py --model_config=configs/model_config.yaml --diffusion_config=configs/diffusion_config.yaml --task_config=configs/motion_deblur_sin_config.yaml --save_dir=./results/adaptive

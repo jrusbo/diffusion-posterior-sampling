@@ -198,6 +198,103 @@ class LinearPosteriorSampling(ConditioningMethod):
 
         return x_t, norm
 
+@register_conditioning_method(name='sigmoid_ps')
+class SigmoidPosteriorSampling(ConditioningMethod):
+    def __init__(self, operator, noiser, **kwargs):
+        super().__init__(operator, noiser)
+        self.eta_min = kwargs.get('eta_min', 0)
+        self.eta_max = kwargs.get('eta_max', 5)
+        self.mid = kwargs.get('mid', 0.5)
+        self.soft = kwargs.get('soft', 0.1)
+        self.num_timesteps = kwargs.get('num_timesteps', 1000)
+
+    def get_adaptive_eta(self, t):
+        progress = 1.0 - t.float() / float(self.num_timesteps - 1)
+
+        eta = self.eta_min + (self.eta_max - self.eta_min) / (1 + math.exp(self.soft * (self.mid - progress)))
+
+        return eta
+
+    def conditioning(self, x_prev, x_t, x_0_hat, measurement, t=None, **kwargs):
+        norm_grad, norm = self.grad_and_value(x_prev=x_prev, x_0_hat=x_0_hat, measurement=measurement, **kwargs)
+
+        if t is None:
+            raise ValueError("AdaptivePosteriorSampling requires timestep t.")
+
+        eta = self.get_adaptive_eta(t)
+
+        while eta.ndim < norm_grad.ndim:
+            eta = eta.unsqueeze(-1)
+
+        x_t = x_t - eta * norm_grad
+
+        return x_t, norm
+
+@register_conditioning_method(name='jump_ps')
+class JumpPosteriorSampling(ConditioningMethod):
+    def __init__(self, operator, noiser, **kwargs):
+        super().__init__(operator, noiser)
+        self.eta_min = kwargs.get('eta_min', 0)
+        self.eta_max = kwargs.get('eta_max', 5)
+        self.mid = kwargs.get('mid', 0.5)
+        self.num_timesteps = kwargs.get('num_timesteps', 1000)
+
+    def get_adaptive_eta(self, t):
+        progress = 1.0 - t.float() / float(self.num_timesteps - 1)
+
+        if (progress < self.mid):
+            eta = self.eta_min
+        else:
+            eta = self.eta_max
+
+        return eta
+
+    def conditioning(self, x_prev, x_t, x_0_hat, measurement, t=None, **kwargs):
+        norm_grad, norm = self.grad_and_value(x_prev=x_prev, x_0_hat=x_0_hat, measurement=measurement, **kwargs)
+
+        if t is None:
+            raise ValueError("AdaptivePosteriorSampling requires timestep t.")
+
+        eta = self.get_adaptive_eta(t)
+
+        while eta.ndim < norm_grad.ndim:
+            eta = eta.unsqueeze(-1)
+
+        x_t = x_t - eta * norm_grad
+
+        return x_t, norm
+
+@register_conditioning_method(name='exp_ps')
+class ExpPosteriorSampling(ConditioningMethod):
+    def __init__(self, operator, noiser, **kwargs):
+        super().__init__(operator, noiser)
+        self.eta_min = kwargs.get('eta_min', 0)
+        self.eta_max = kwargs.get('eta_max', 5)
+        self.soft = kwargs.get('soft', 0.1)
+        self.num_timesteps = kwargs.get('num_timesteps', 1000)
+
+    def get_adaptive_eta(self, t):
+        progress = 1.0 - t.float() / float(self.num_timesteps - 1)
+
+        eta = self.eta_min + (self.eta_max - self.eta_min) * math.exp(self.soft * (progress - 1))
+
+        return eta
+
+    def conditioning(self, x_prev, x_t, x_0_hat, measurement, t=None, **kwargs):
+        norm_grad, norm = self.grad_and_value(x_prev=x_prev, x_0_hat=x_0_hat, measurement=measurement, **kwargs)
+
+        if t is None:
+            raise ValueError("AdaptivePosteriorSampling requires timestep t.")
+
+        eta = self.get_adaptive_eta(t)
+
+        while eta.ndim < norm_grad.ndim:
+            eta = eta.unsqueeze(-1)
+
+        x_t = x_t - eta * norm_grad
+
+        return x_t, norm
+
 @register_conditioning_method(name='ps+')
 class PosteriorSamplingPlus(ConditioningMethod):
     def __init__(self, operator, noiser, **kwargs):

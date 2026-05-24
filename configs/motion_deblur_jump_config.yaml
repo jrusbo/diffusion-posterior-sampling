@@ -1,8 +1,9 @@
 conditioning:
-  method: linear_ps
+  method: jump_ps
   params:
-    eta_min: 0
-    eta_max: 5
+    eta_min: 0.01
+    eta_max: 4.99
+    mid: 0.55
     num_timesteps: 1000
 
 data:
