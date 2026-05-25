@@ -13,6 +13,12 @@ from .posterior_mean_variance import get_mean_processor, get_var_processor
 from util.logger import get_logger
 logger = get_logger()
 
+
+def _eta_display_value(eta):
+    if torch.is_tensor(eta):
+        return eta.mean().item()
+    return float(eta)
+
 __SAMPLER__ = {}
 
 def register_sampler(name: str):
@@ -236,7 +242,7 @@ class GaussianDiffusion:
 
                 # 5. Policy Action
                 eta, log_prob, entropy = policy_net.sample_eta(state)
-                pbar.set_postfix(t=f"{t[0].item():03d}", eta=f"{eta.mean().item():.3f}")
+                pbar.set_postfix(t=f"{t[0].item():03d}", eta=f"{_eta_display_value(eta):.3f}")
 
                 # 6. Conditioning
                 noisy_measurement = self.q_sample(measurement, t=t)
@@ -305,11 +311,11 @@ class GaussianDiffusion:
                 state = torch.stack([t_norm, log_consistency], dim=-1)
                 eta, log_prob, entropy = policy_net.sample_eta(state, deterministic=True)
                 cond_kwargs['rl_eta'] = eta
-                current_eta_val = eta.mean().item()
+                current_eta_val = _eta_display_value(eta)
             elif conditioning_method is not None:
                 if hasattr(conditioning_method, 'get_adaptive_eta'):
                     eta = conditioning_method.get_adaptive_eta(time)
-                    current_eta_val = eta.mean().item()
+                    current_eta_val = _eta_display_value(eta)
                 elif hasattr(conditioning_method, 'scale'):
                     current_eta_val = float(conditioning_method.scale)
 

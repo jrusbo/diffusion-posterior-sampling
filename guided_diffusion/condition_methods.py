@@ -4,6 +4,12 @@ import math
 
 __CONDITIONING_METHOD__ = {}
 
+
+def _as_eta_tensor(eta, reference):
+    if torch.is_tensor(eta):
+        return eta.to(device=reference.device, dtype=reference.dtype)
+    return torch.as_tensor(eta, device=reference.device, dtype=reference.dtype)
+
 def register_conditioning_method(name: str):
     def wrapper(cls):
         if __CONDITIONING_METHOD__.get(name, None):
@@ -158,7 +164,7 @@ class SinPosteriorSampling(ConditioningMethod):
         if t is None:
             raise ValueError("AdaptivePosteriorSampling requires timestep t.")
 
-        eta = self.get_adaptive_eta(t)
+        eta = _as_eta_tensor(self.get_adaptive_eta(t), norm_grad)
 
         # reshape eta for broadcasting
         while eta.ndim < norm_grad.ndim:
@@ -189,7 +195,7 @@ class LinearPosteriorSampling(ConditioningMethod):
         if t is None:
             raise ValueError("AdaptivePosteriorSampling requires timestep t.")
 
-        eta = self.get_adaptive_eta(t)
+        eta = _as_eta_tensor(self.get_adaptive_eta(t), norm_grad)
 
         while eta.ndim < norm_grad.ndim:
             eta = eta.unsqueeze(-1)
@@ -205,13 +211,13 @@ class SigmoidPosteriorSampling(ConditioningMethod):
         self.eta_min = kwargs.get('eta_min', 0)
         self.eta_max = kwargs.get('eta_max', 5)
         self.mid = kwargs.get('mid', 0.5)
-        self.soft = kwargs.get('soft', 0.1)
+        self.soft = kwargs.get('soft', 10)
         self.num_timesteps = kwargs.get('num_timesteps', 1000)
 
     def get_adaptive_eta(self, t):
         progress = 1.0 - t.float() / float(self.num_timesteps - 1)
 
-        eta = self.eta_min + (self.eta_max - self.eta_min) / (1 + math.exp(self.soft * (self.mid - progress)))
+        eta = self.eta_min + (self.eta_max - self.eta_min) / (1 + torch.exp(self.soft * (self.mid - progress)))
 
         return eta
 
@@ -221,7 +227,7 @@ class SigmoidPosteriorSampling(ConditioningMethod):
         if t is None:
             raise ValueError("AdaptivePosteriorSampling requires timestep t.")
 
-        eta = self.get_adaptive_eta(t)
+        eta = _as_eta_tensor(self.get_adaptive_eta(t), norm_grad)
 
         while eta.ndim < norm_grad.ndim:
             eta = eta.unsqueeze(-1)
@@ -242,10 +248,11 @@ class JumpPosteriorSampling(ConditioningMethod):
     def get_adaptive_eta(self, t):
         progress = 1.0 - t.float() / float(self.num_timesteps - 1)
 
-        if (progress < self.mid):
-            eta = self.eta_min
-        else:
-            eta = self.eta_max
+        eta = torch.where(
+            progress < self.mid,
+            torch.full_like(progress, self.eta_min),
+            torch.full_like(progress, self.eta_max),
+        )
 
         return eta
 
@@ -255,7 +262,7 @@ class JumpPosteriorSampling(ConditioningMethod):
         if t is None:
             raise ValueError("AdaptivePosteriorSampling requires timestep t.")
 
-        eta = self.get_adaptive_eta(t)
+        eta = _as_eta_tensor(self.get_adaptive_eta(t), norm_grad)
 
         while eta.ndim < norm_grad.ndim:
             eta = eta.unsqueeze(-1)
@@ -270,13 +277,13 @@ class ExpPosteriorSampling(ConditioningMethod):
         super().__init__(operator, noiser)
         self.eta_min = kwargs.get('eta_min', 0)
         self.eta_max = kwargs.get('eta_max', 5)
-        self.soft = kwargs.get('soft', 0.1)
+        self.soft = kwargs.get('soft', 5)
         self.num_timesteps = kwargs.get('num_timesteps', 1000)
 
     def get_adaptive_eta(self, t):
         progress = 1.0 - t.float() / float(self.num_timesteps - 1)
 
-        eta = self.eta_min + (self.eta_max - self.eta_min) * math.exp(self.soft * (progress - 1))
+        eta = self.eta_min + (self.eta_max - self.eta_min) * torch.exp(self.soft * (progress - 1))
 
         return eta
 
@@ -286,7 +293,7 @@ class ExpPosteriorSampling(ConditioningMethod):
         if t is None:
             raise ValueError("AdaptivePosteriorSampling requires timestep t.")
 
-        eta = self.get_adaptive_eta(t)
+        eta = _as_eta_tensor(self.get_adaptive_eta(t), norm_grad)
 
         while eta.ndim < norm_grad.ndim:
             eta = eta.unsqueeze(-1)
