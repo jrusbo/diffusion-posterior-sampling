@@ -169,7 +169,7 @@ def main():
 
     fig.tight_layout()
 
-    save_path = Path(args.save) if args.save else results_dir / 'metrics_per_steps_comparison.png'
+    save_path = Path(args.save) if args.save else results_dir / 'metrics_vs_steps.png'
     fig.savefig(save_path, dpi=150, bbox_inches='tight')
     print(f"Saved figure to: {save_path}")
 

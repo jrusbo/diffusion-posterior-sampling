@@ -180,7 +180,7 @@ def main():
 
     fig.tight_layout()
 
-    save_path = RESULTS_DIR / "metrics_step0_vs_eta.png"
+    save_path = RESULTS_DIR / "metrics_vs_eta.png"
     fig.savefig(save_path, dpi=150, bbox_inches="tight")
 
     print(f"Saved figure to: {save_path}")
