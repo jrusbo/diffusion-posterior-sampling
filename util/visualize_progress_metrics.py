@@ -10,6 +10,24 @@ METRICS = ["psnr", "ssim", "lpips", "eta"]
 REQUIRED_METRICS = ["psnr", "ssim", "lpips"]
 
 
+def split_task_name(task: str) -> tuple[str, str | None]:
+    if "/" not in task:
+        return task, None
+    head, tail = task.rsplit("/", 1)
+    return head, tail
+
+
+def resolve_task_label(task: str, shared_part: str | None = None) -> str:
+    head, part = split_task_name(task)
+    if shared_part is not None and part == shared_part:
+        return head
+    return head if part is None else task
+
+
+def sanitize_filename_component(text: str) -> str:
+    return text.replace("/", "_").replace(" ", "_")
+
+
 def resolve_csv(task: str, csv_path: str | None) -> Path:
     if csv_path is not None:
         return Path(csv_path)
@@ -122,11 +140,13 @@ def main():
 
     csv1 = resolve_csv(args.task, args.csv)
     df1 = load_metrics(csv1)
-    label1 = args.name1 or (csv1.stem if args.csv else args.task)
 
     has_second = args.csv2 is not None or args.task2 is not None
 
     if has_second:
+        task1_source = args.task if args.task is not None else csv1.stem
+        task1_head, task1_part = split_task_name(task1_source)
+
         if args.csv2 is not None:
             csv2 = Path(args.csv2)
         else:
@@ -134,12 +154,18 @@ def main():
             csv2 = Path(f"./results/{task2}/progress_metrics.csv")
 
         df2 = load_metrics(csv2)
-        label2 = args.name2 or (csv2.stem if args.csv2 else (args.task2 or "run2"))
+        task2_source = args.task2 if args.task2 is not None else (csv2.stem if args.csv2 is not None else args.task)
+        _, task2_part = split_task_name(task2_source)
+
+        shared_part = task1_part if task1_part is not None and task1_part == task2_part else None
+        label1 = args.name1 or resolve_task_label(task1_source, shared_part)
+        label2 = args.name2 or resolve_task_label(task2_source, shared_part)
         diff_df = compute_diff_df(df1, df2)
         fig, axes = plt.subplots(2, len(METRICS), figsize=(5 * len(METRICS), 10), sharex="col")
         top_axes = axes[0]
         bottom_axes = axes[1]
     else:
+        label1 = args.name1 or (resolve_task_label(args.task, None) if args.task is not None else csv1.stem)
         df2 = None
         diff_df = None
         label2 = None
@@ -191,7 +217,10 @@ def main():
 
     fig.tight_layout()
 
-    save_path = csv1.parent / "metrics_comparison.png"
+    if has_second and label2 is not None:
+        save_path = csv1.parent / f"{sanitize_filename_component(label1)}_vs_{sanitize_filename_component(label2)}.png"
+    else:
+        save_path = csv1.parent / "metrics_comparison.png"
     fig.savefig(save_path, dpi=150, bbox_inches="tight")
     print(f"Saved figure to: {save_path}")
 
