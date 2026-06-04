@@ -175,8 +175,7 @@ def mask_image(x, bboxes, config):
     height, width, _ = config['image_shape']
     max_delta_h, max_delta_w = config['max_delta_shape']
     mask = bbox2mask(bboxes, height, width, max_delta_h, max_delta_w)
-    if x.is_cuda:
-        mask = mask.cuda()
+    mask = mask.to(x.device)
 
     if config['mask_type'] == 'hole':
         result = x * (1. - mask)
@@ -234,23 +233,6 @@ def reduce_mean(x, axis=None, keepdim=False):
     return x
 
 
-def normalize_np(img):
-    """ Normalize img in arbitrary range to [0, 1] """
-    img -= np.min(img)
-    img /= np.max(img)
-    return img
-
-
-def clear_color(x):
-    x = x.detach().cpu().squeeze().numpy()
-    return normalize_np(np.transpose(x, (1, 2, 0)))
-
-
-def clear(x):
-    x = x.detach().cpu().squeeze().numpy()
-    return normalize_np(x)
-
-
 def reduce_std(x, axis=None, keepdim=False):
     if not axis:
         axis = range(len(x.shape))
@@ -301,32 +283,24 @@ def pt_flow_to_image(flow):
     Part of code forked from flownet.
     """
     out = []
-    maxu = torch.tensor(-999)
-    maxv = torch.tensor(-999)
-    minu = torch.tensor(999)
-    minv = torch.tensor(999)
-    maxrad = torch.tensor(-1)
-    if torch.cuda.is_available():
-        maxu = maxu.cuda()
-        maxv = maxv.cuda()
-        minu = minu.cuda()
-        minv = minv.cuda()
-        maxrad = maxrad.cuda()
+    
+    # flow: [B, 2, H, W]
     for i in range(flow.shape[0]):
         u = flow[i, 0, :, :]
         v = flow[i, 1, :, :]
+        
         idxunknow = (torch.abs(u) > 1e7) + (torch.abs(v) > 1e7)
+        u = u.clone()
+        v = v.clone()
         u[idxunknow] = 0
         v[idxunknow] = 0
-        maxu = torch.max(maxu, torch.max(u))
-        minu = torch.min(minu, torch.min(u))
-        maxv = torch.max(maxv, torch.max(v))
-        minv = torch.min(minv, torch.min(v))
-        rad = torch.sqrt((u ** 2 + v ** 2).float()).to(torch.int64)
-        maxrad = torch.max(maxrad, torch.max(rad))
+        
+        rad = torch.sqrt(u ** 2 + v ** 2)
+        maxrad = torch.max(rad)
+        
         u = u / (maxrad + torch.finfo(torch.float32).eps)
         v = v / (maxrad + torch.finfo(torch.float32).eps)
-        # TODO: change the following to pytorch
+        
         img = pt_compute_color(u, v)
         out.append(img)
 
@@ -334,39 +308,45 @@ def pt_flow_to_image(flow):
 
 
 def highlight_flow(flow):
-    """Convert flow into middlebury color code image.
+    """Draw flow as white points on a gray background.
     """
     out = []
-    s = flow.shape
-    for i in range(flow.shape[0]):
-        img = np.ones((s[1], s[2], 3)) * 144.
+    # flow: [B, H, W, 2]
+    B, H, W, _ = flow.shape
+    for i in range(B):
+        img = np.ones((H, W, 3), dtype=np.float32) * 144.
         u = flow[i, :, :, 0]
         v = flow[i, :, :, 1]
-        for h in range(s[1]):
-            for w in range(s[1]):
-                ui = u[h, w]
-                vi = v[h, w]
-                img[ui, vi, :] = 255.
+        
+        # Vectorized assignment
+        u_idx = np.clip(u, 0, H - 1).astype(int).flatten()
+        v_idx = np.clip(v, 0, W - 1).astype(int).flatten()
+        img[u_idx, v_idx, :] = 255.
         out.append(img)
-    return np.float32(np.uint8(out))
+    return np.array(out, dtype=np.float32)
 
 
 def pt_highlight_flow(flow):
-    """Convert flow into middlebury color code image.
-        """
+    """Draw flow as white points on a gray background (PyTorch version).
+    """
+    # flow: [B, H, W, 2]
+    B, H, W, _ = flow.shape
+    device = flow.device
     out = []
-    s = flow.shape
-    for i in range(flow.shape[0]):
-        img = np.ones((s[1], s[2], 3)) * 144.
+    for i in range(B):
+        img = torch.ones((3, H, W), device=device) * 144. / 255.
         u = flow[i, :, :, 0]
         v = flow[i, :, :, 1]
-        for h in range(s[1]):
-            for w in range(s[1]):
-                ui = u[h, w]
-                vi = v[h, w]
-                img[ui, vi, :] = 255.
+        
+        u_idx = torch.clamp(u, 0, H - 1).long().flatten()
+        v_idx = torch.clamp(v, 0, W - 1).long().flatten()
+        
+        # Using index_put_ to update the image tensor
+        # We need to flat indices for 3D tensor if we want to do it in one go or do it channel by channel
+        for c in range(3):
+            img[c].view(-1)[u_idx * W + v_idx] = 1.0
         out.append(img)
-    return np.float32(np.uint8(out))
+    return torch.stack(out, dim=0)
 
 
 def compute_color(u, v):
@@ -400,34 +380,36 @@ def compute_color(u, v):
 
 def pt_compute_color(u, v):
     h, w = u.shape
-    img = torch.zeros([3, h, w])
-    if torch.cuda.is_available():
-        img = img.cuda()
-    nanIdx = (torch.isnan(u) + torch.isnan(v)) != 0
+    device = u.device
+    img = torch.zeros([3, h, w], device=device)
+    
+    nanIdx = torch.isnan(u) | torch.isnan(v)
+    u = u.clone()
+    v = v.clone()
     u[nanIdx] = 0.
     v[nanIdx] = 0.
-    # colorwheel = COLORWHEEL
-    colorwheel = pt_make_color_wheel()
-    if torch.cuda.is_available():
-        colorwheel = colorwheel.cuda()
+    
+    colorwheel = pt_make_color_wheel().to(device)
     ncols = colorwheel.size()[0]
-    rad = torch.sqrt((u ** 2 + v ** 2).to(torch.float32))
-    a = torch.atan2(-v.to(torch.float32), -u.to(torch.float32)) / np.pi
+    
+    rad = torch.sqrt(u ** 2 + v ** 2)
+    a = torch.atan2(-v, -u) / torch.pi
     fk = (a + 1) / 2 * (ncols - 1) + 1
     k0 = torch.floor(fk).to(torch.int64)
     k1 = k0 + 1
     k1[k1 == ncols + 1] = 1
     f = fk - k0.to(torch.float32)
+    
     for i in range(colorwheel.size()[1]):
         tmp = colorwheel[:, i]
         col0 = tmp[k0 - 1]
         col1 = tmp[k1 - 1]
         col = (1 - f) * col0 + f * col1
-        idx = rad <= 1. / 255.
+        
+        idx = rad <= 1.0
         col[idx] = 1 - rad[idx] * (1 - col[idx])
-        notidx = (idx != 0)
-        col[notidx] *= 0.75
-        img[i, :, :] = col * (1 - nanIdx).to(torch.float32)
+        col[~idx] *= 0.75
+        img[i, :, :] = col * (~nanIdx).to(torch.float32)
     return img
 
 
@@ -455,7 +437,7 @@ def make_color_wheel():
     # BM
     colorwheel[col:col + BM, 2] = 255
     colorwheel[col:col + BM, 0] = np.transpose(np.floor(255 * np.arange(0, BM) / BM))
-    col += + BM
+    col += BM
     # MR
     colorwheel[col:col + MR, 2] = 255 - np.transpose(np.floor(255 * np.arange(0, MR) / MR))
     colorwheel[col:col + MR, 0] = 255

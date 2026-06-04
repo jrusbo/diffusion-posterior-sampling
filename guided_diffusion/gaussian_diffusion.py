@@ -1,15 +1,23 @@
+import csv
 import math
 import os
-from functools import partial
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from tqdm.auto import tqdm
 
-from util.img_utils import clear_color
+from util.img_utils import clear_color, calculate_psnr
 from .posterior_mean_variance import get_mean_processor, get_var_processor
 
 
+from util.logger import get_logger
+logger = get_logger()
+
+
+def _eta_display_value(eta):
+    if torch.is_tensor(eta):
+        return eta.mean().item()
+    return float(eta)
 
 __SAMPLER__ = {}
 
@@ -28,6 +36,16 @@ def get_sampler(name: str):
     return __SAMPLER__[name]
 
 
+def _write_eta_csv(csv_path, eta_rows):
+    if len(eta_rows) == 0:
+        return
+
+    with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=['step', 'eta'])
+        writer.writeheader()
+        writer.writerows(eta_rows)
+
+
 def create_sampler(sampler,
                    steps,
                    noise_schedule,
@@ -36,7 +54,8 @@ def create_sampler(sampler,
                    dynamic_threshold,
                    clip_denoised,
                    rescale_timesteps,
-                   timestep_respacing=""):
+                   timestep_respacing="",
+                   **kwargs):
     
     sampler = get_sampler(name=sampler)
     
@@ -173,50 +192,169 @@ class GaussianDiffusion:
                       measurement,
                       measurement_cond_fn,
                       record,
-                      save_root):
+                      save_root,
+                      rl_mode=False,
+                      policy_net=None,
+                      reward_fn=None,
+                      max_steps=None,
+                      ref_img=None,
+                      conditioning_method=None,
+                      operator=None,
+                      operator_kwargs=None
+                      ):
         """
         The function used for sampling from noise.
         """ 
-        img = x_start
         device = x_start.device
+        img = x_start
+        operator_kwargs = operator_kwargs or {}
 
-        pbar = tqdm(list(range(self.num_timesteps))[::-1])
-        for idx in pbar:
+        if rl_mode and max_steps is not None and ref_img is not None:
+            # RL TRAINING MODE: Sequential loop over independent timesteps for visibility & OOM safety
+            batch_size = img.shape[0]
+            all_log_probs = []
+            all_rewards = []
+            all_ts = []
+            all_etas = []
+            all_entropies = []
+
+            pbar = tqdm(range(max_steps), desc="RL Training Episodes", leave=False)
+            for _ in pbar:
+                # 1. Sample a random timestep for this iteration
+                t = torch.randint(1, self.num_timesteps, (1,), device=device).repeat(batch_size)
+                
+                # 2. Generate noisy sample x_t for this t
+                x_t = self.q_sample(ref_img, t=t)
+
+                # 3. Reverse Step (p_sample) - Needed BEFORE policy to get observable state
+                x_t = x_t.requires_grad_()
+                out = self.p_sample(x=x_t, t=t, model=model)
+
+                # 4. State Space: [t_norm, log_consistency]
+                # Use observable consistency instead of ground-truth PSNR
+                with torch.no_grad():
+                    sim_y = operator.forward(out['pred_xstart'], **operator_kwargs)
+                    # Per-sample MSE consistency
+                    consistency = (sim_y - measurement).pow(2).mean(dim=list(range(1, sim_y.ndim)))
+                    log_consistency = torch.log(consistency + 1e-6)
+
+                t_norm = t.float() / self.num_timesteps
+                state = torch.stack([t_norm, log_consistency], dim=-1)
+
+                # 5. Policy Action
+                eta, log_prob, entropy = policy_net.sample_eta(state)
+                pbar.set_postfix(t=f"{t[0].item():03d}", eta=f"{_eta_display_value(eta):.3f}")
+
+                # 6. Conditioning
+                noisy_measurement = self.q_sample(measurement, t=t)
+                x_prev, distance = measurement_cond_fn(
+                    x_t=out['sample'],
+                    measurement=measurement,
+                    noisy_measurement=noisy_measurement,
+                    x_prev=x_t,
+                    x_0_hat=out['pred_xstart'],
+                    t=t,
+                    rl_eta=eta
+                )
+                x_prev = x_prev.detach()
+
+                # 7. Reward Calculation (requires one more UNet pass to see result quality)
+                with torch.no_grad():
+                    out_next = self.p_mean_variance(model, x_prev, t - 1)
+                    eval_xstart = out_next['pred_xstart']
+
+                reward_output = reward_fn(eval_xstart, measurement, ref_img=ref_img)
+                if isinstance(reward_output, tuple):
+                    rewards, reward_info = reward_output
+                else:
+                    rewards = reward_output
+                    reward_info = {}
+                
+                rewards = rewards.detach()
+
+                # Collect experience
+                all_log_probs.append(log_prob.view(-1))
+                all_rewards.append((rewards, reward_info)) # Store info for logging
+                all_ts.append(t.view(-1))
+                all_etas.append(eta.view(-1))
+                all_entropies.append(entropy.view(-1))
+
+            return None, torch.cat(all_log_probs), all_rewards, torch.cat(all_ts), torch.cat(all_etas), torch.cat(all_entropies)
+        # SEQUENTIAL INFERENCE MODE
+        timesteps = list(range(self.num_timesteps))[::-1]
+
+        inf_pbar = tqdm(timesteps)
+        eta_rows = []
+        for idx in inf_pbar:
+            inf_pbar.set_description_str(f"Sampling (t={idx:03d})")
             time = torch.tensor([idx] * img.shape[0], device=device)
-            
+
             img = img.requires_grad_()
             out = self.p_sample(x=img, t=time, model=model)
             
-            # Give condition.
-            noisy_measurement = self.q_sample(measurement, t=time)
+            cond_kwargs = {}
+            current_psnr_val = 0.0
+            current_eta_val = None
 
-            # TODO: how can we handle argument for different condition method?
-            
-            # img, distance = measurement_cond_fn(x_t=out['sample'],
-            #                           measurement=measurement,
-            #                           noisy_measurement=noisy_measurement,
-            #                           x_prev=img,
-            #                           x_0_hat=out['pred_xstart'])
-            
+            if ref_img is not None:
+                with torch.no_grad():
+                    current_psnr_val = calculate_psnr(img, ref_img).mean().item()
+
+            if rl_mode and policy_net is not None:
+                # Calculate observable consistency for the policy state
+                with torch.no_grad():
+                    sim_y = operator.forward(out['pred_xstart'], **operator_kwargs)
+                    # Per-sample MSE consistency
+                    consistency = (sim_y - measurement).pow(2).mean(dim=list(range(1, sim_y.ndim)))
+                    log_consistency = torch.log(consistency + 1e-6)
+
+                t_norm = time.float() / self.num_timesteps
+                state = torch.stack([t_norm, log_consistency], dim=-1)
+                eta, log_prob, entropy = policy_net.sample_eta(state, deterministic=True)
+                cond_kwargs['rl_eta'] = eta
+                current_eta_val = _eta_display_value(eta)
+            elif conditioning_method is not None:
+                if hasattr(conditioning_method, 'get_adaptive_eta'):
+                    eta = conditioning_method.get_adaptive_eta(time)
+                    current_eta_val = _eta_display_value(eta)
+                elif hasattr(conditioning_method, 'scale'):
+                    current_eta_val = float(conditioning_method.scale)
+
+            noisy_measurement = self.q_sample(measurement, t=time)
             img, distance = measurement_cond_fn(
                 x_t=out['sample'],
                 measurement=measurement,
                 noisy_measurement=noisy_measurement,
                 x_prev=img,
                 x_0_hat=out['pred_xstart'],
-                t=time
+                t=time,
+                **cond_kwargs
             )
             img = img.detach_()
-           
-            pbar.set_postfix({'distance': distance.item()}, refresh=False)
-            if record:
-                if idx % 10 == 0:
-                    file_path = os.path.join(save_root, f"progress/x_{str(idx).zfill(4)}.png")
-                    plt.imsave(file_path, clear_color(img))
+            distance = distance.detach()
+
+            postfix = {
+                'dist': f"{distance.mean().item():.2f}",
+                'psnr': f"{current_psnr_val:.2f}",
+            }
+            if current_eta_val is not None:
+                postfix['eta'] = f"{current_eta_val:.3f}"
+            inf_pbar.set_postfix(**postfix)
+
+            if current_eta_val is not None:
+                eta_rows.append({'step': idx, 'eta': current_eta_val})
+
+            if record and idx % 10 == 0:
+                os.makedirs(save_root, exist_ok=True)
+                file_path = os.path.join(save_root, f"x_{str(idx).zfill(4)}.png")
+                plt.imsave(file_path, clear_color(img))
+
+        if record and len(eta_rows) > 0:
+            _write_eta_csv(os.path.join(save_root, 'eta_per_step.csv'), eta_rows)
 
         return img       
         
-    def p_sample(self, model, x, t):
+    def p_sample(self, model, x, t, **kwargs):
         raise NotImplementedError
 
     def p_mean_variance(self, model, x, t):
@@ -372,31 +510,41 @@ class _WrappedModel:
 
 @register_sampler(name='ddpm')
 class DDPM(SpacedDiffusion):
-    def p_sample(self, model, x, t):
+    def p_sample(self, model, x, t, **kwargs):
         out = self.p_mean_variance(model, x, t)
         sample = out['mean']
 
         noise = torch.randn_like(x)
-        if t != 0:  # no noise when t == 0
-            sample += torch.exp(0.5 * out['log_variance']) * noise
+        # Create a mask for non-zero timesteps to handle batched t
+        nonzero_mask = (t != 0).float().view(-1, *([1] * (x.ndim - 1)))
+        sample += nonzero_mask * torch.exp(0.5 * out['log_variance']) * noise
 
         return {'sample': sample, 'pred_xstart': out['pred_xstart']}
     
 
 @register_sampler(name='ddim')
 class DDIM(SpacedDiffusion):
-    def p_sample(self, model, x, t, eta=0.0):
+    def p_sample(self, model, x, t, eta=0.0, **kwargs):
         out = self.p_mean_variance(model, x, t)
         
         eps = self.predict_eps_from_x_start(x, t, out['pred_xstart'])
         
         alpha_bar = extract_and_expand(self.alphas_cumprod, t, x)
         alpha_bar_prev = extract_and_expand(self.alphas_cumprod_prev, t, x)
+
+        if isinstance(eta, torch.Tensor):
+            eta = eta.view(-1, 1, 1, 1)
+
         sigma = (
             eta
             * torch.sqrt((1 - alpha_bar_prev) / (1 - alpha_bar))
             * torch.sqrt(1 - alpha_bar / alpha_bar_prev)
         )
+        
+        # Guard against NaNs: sigma cannot exceed the total variance sqrt(1 - alpha_bar_prev)
+        # This happens if eta is too large.
+        sigma = torch.min(sigma, torch.sqrt(1 - alpha_bar_prev) * 0.999)
+
         # Equation 12.
         noise = torch.randn_like(x)
         mean_pred = (
@@ -405,8 +553,9 @@ class DDIM(SpacedDiffusion):
         )
 
         sample = mean_pred
-        if t != 0:
-            sample += sigma * noise
+        # Create a mask for non-zero timesteps
+        nonzero_mask = (t != 0).float().view(-1, *([1] * (x.ndim - 1)))
+        sample += nonzero_mask * sigma * noise
         
         return {"sample": sample, "pred_xstart": out["pred_xstart"]}
 

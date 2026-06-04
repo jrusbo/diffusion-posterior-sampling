@@ -16,7 +16,8 @@ __MODEL_MEAN_PROCESSOR__ = {}
 def register_mean_processor(name: str):
     def wrapper(cls):
         if __MODEL_MEAN_PROCESSOR__.get(name, None):
-            raise NameError(f"Name {name} is already registerd.")
+            raise NameError(f"Name {name} is already registered.")
+
         __MODEL_MEAN_PROCESSOR__[name] = cls
         return cls
     return wrapper
@@ -136,7 +137,8 @@ __MODEL_VAR_PROCESSOR__ = {}
 def register_var_processor(name: str):
     def wrapper(cls):
         if __MODEL_VAR_PROCESSOR__.get(name, None):
-            raise NameError(f"Name {name} is already registerd.")
+            raise NameError(f"Name {name} is already registered.")
+
         __MODEL_VAR_PROCESSOR__[name] = cls
         return cls
     return wrapper

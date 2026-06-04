@@ -1,18 +1,20 @@
 conditioning:
-  method: ps
+  method: linear_ps
   params:
-    scale: 0.3
+    eta_min: 0
+    eta_max: 5
+    num_timesteps: 1000
 
 data:
   name: ffhq
-  root: ./data/samples/
+  root: ./data/samples
 
 measurement:
   operator:
-    name: gaussian_blur
+    name: motion_blur
     kernel_size: 61
-    intensity: 3.0
-  
+    intensity: 0.5
+
   noise: 
     name: gaussian
     sigma: 0.05

@@ -18,3 +18,4 @@ use_fp16: False
 use_new_attention_order: False
 
 model_path: models/imagenet256.pt
+seed: null

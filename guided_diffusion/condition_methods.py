@@ -4,6 +4,12 @@ import math
 
 __CONDITIONING_METHOD__ = {}
 
+
+def _as_eta_tensor(eta, reference):
+    if torch.is_tensor(eta):
+        return eta.to(device=reference.device, dtype=reference.dtype)
+    return torch.as_tensor(eta, device=reference.device, dtype=reference.dtype)
+
 def register_conditioning_method(name: str):
     def wrapper(cls):
         if __CONDITIONING_METHOD__.get(name, None):
@@ -27,17 +33,29 @@ class ConditioningMethod(ABC):
         return self.operator.project(data=data, measurement=noisy_measurement, **kwargs)
     
     def grad_and_value(self, x_prev, x_0_hat, measurement, **kwargs):
-        if self.noiser.__name__ == 'gaussian':
+        if self.noiser.__name__ in ['gaussian', 'clean']:
             difference = measurement - self.operator.forward(x_0_hat, **kwargs)
-            norm = torch.linalg.norm(difference)
-            norm_grad = torch.autograd.grad(outputs=norm, inputs=x_prev)[0]
+            # Per-sample L2 norm: reshape to [B, -1] and compute norm across dim 1
+            norm = torch.linalg.norm(difference.reshape(difference.shape[0], -1), dim=1)
+            # Use sum() so that autograd produces the correct individual gradients for each sample
+            norm_grad = torch.autograd.grad(outputs=norm.sum(), inputs=x_prev)[0]
         
         elif self.noiser.__name__ == 'poisson':
             Ax = self.operator.forward(x_0_hat, **kwargs)
-            difference = measurement-Ax
-            norm = torch.linalg.norm(difference) / measurement.abs()
-            norm = norm.mean()
-            norm_grad = torch.autograd.grad(outputs=norm, inputs=x_prev)[0]
+            difference = measurement - Ax
+            # Per-sample relative norm
+            # Use torch.where or similar to avoid division by zero without adding epsilon
+            den = measurement.reshape(measurement.shape[0], -1).abs().mean(dim=1)
+            num = torch.linalg.norm(difference.reshape(difference.shape[0], -1), dim=1)
+            
+            # If denominator is zero, we avoid division. 
+            # In practice, measurements for Poisson are usually non-zero.
+            norm = torch.zeros_like(num)
+            mask = den > 0
+            norm[mask] = num[mask] / den[mask]
+            
+            # Use sum() to get individual gradients for each sample
+            norm_grad = torch.autograd.grad(outputs=norm.sum(), inputs=x_prev)[0]
 
         else:
             raise NotImplementedError
@@ -45,20 +63,20 @@ class ConditioningMethod(ABC):
         return norm_grad, norm
    
     @abstractmethod
-    def conditioning(self, x_t, measurement, noisy_measurement=None, **kwargs):
+    def conditioning(self, x_prev, x_t, x_0_hat, measurement, noisy_measurement=None, **kwargs):
         pass
     
 @register_conditioning_method(name='vanilla')
 class Identity(ConditioningMethod):
     # just pass the input without conditioning
-    def conditioning(self, x_t):
-        return x_t
+    def conditioning(self, x_prev, x_t, x_0_hat, measurement, noisy_measurement=None, **kwargs):
+        return x_t, torch.zeros(x_t.shape[0], device=x_t.device)
     
 @register_conditioning_method(name='projection')
 class Projection(ConditioningMethod):
-    def conditioning(self, x_t, noisy_measurement, **kwargs):
-        x_t = self.project(data=x_t, noisy_measurement=noisy_measurement)
-        return x_t
+    def conditioning(self, x_prev, x_t, x_0_hat, measurement, noisy_measurement=None, **kwargs):
+        x_t = self.project(data=x_t, noisy_measurement=noisy_measurement, **kwargs)
+        return x_t, torch.zeros(x_t.shape[0], device=x_t.device)
 
 
 @register_conditioning_method(name='mcg')
@@ -86,9 +104,35 @@ class PosteriorSampling(ConditioningMethod):
         norm_grad, norm = self.grad_and_value(x_prev=x_prev, x_0_hat=x_0_hat, measurement=measurement, **kwargs)
         x_t -= norm_grad * self.scale
         return x_t, norm
-        
-@register_conditioning_method(name='adaptive_ps')
-class AdaptivePosteriorSampling(ConditioningMethod):
+
+@register_conditioning_method(name='rl_ps')
+class RLPosteriorSampling(ConditioningMethod):
+    def __init__(self, operator, noiser, **kwargs):
+        super().__init__(operator, noiser)
+
+    def conditioning(self, x_prev, x_t, x_0_hat, measurement, rl_eta=None, **kwargs):
+        # We expect the diffusion loop to pass 'rl_eta' from the policy network
+        if rl_eta is None:
+            raise ValueError("rl_eta must be provided by the RL policy network.")
+
+        norm_grad, norm = self.grad_and_value(
+            x_prev=x_prev,
+            x_0_hat=x_0_hat,
+            measurement=measurement,
+            **kwargs
+        )
+
+        # Reshape rl_eta for broadcasting across the batch/channels
+        while rl_eta.ndim < norm_grad.ndim:
+            rl_eta = rl_eta.unsqueeze(-1)
+
+        # Apply the dynamically learned step size!
+        x_t = x_t - rl_eta * norm_grad
+
+        return x_t, norm
+
+@register_conditioning_method(name='sin_ps')
+class SinPosteriorSampling(ConditioningMethod):
     def __init__(self, operator, noiser, **kwargs):
         super().__init__(operator, noiser)
         self.eta_min = kwargs.get('eta_min', 0.05)
@@ -120,7 +164,7 @@ class AdaptivePosteriorSampling(ConditioningMethod):
         if t is None:
             raise ValueError("AdaptivePosteriorSampling requires timestep t.")
 
-        eta = self.get_adaptive_eta(t)
+        eta = _as_eta_tensor(self.get_adaptive_eta(t), norm_grad)
 
         # reshape eta for broadcasting
         while eta.ndim < norm_grad.ndim:
@@ -129,7 +173,135 @@ class AdaptivePosteriorSampling(ConditioningMethod):
         x_t = x_t - eta * norm_grad
 
         return x_t, norm
-    
+
+@register_conditioning_method(name='linear_ps')
+class LinearPosteriorSampling(ConditioningMethod):
+    def __init__(self, operator, noiser, **kwargs):
+        super().__init__(operator, noiser)
+        self.eta_min = kwargs.get('eta_min', 0)
+        self.eta_max = kwargs.get('eta_max', 5)
+        self.num_timesteps = kwargs.get('num_timesteps', 1000)
+
+    def get_adaptive_eta(self, t):
+        progress = 1.0 - t.float() / float(self.num_timesteps - 1)
+
+        eta = self.eta_min + (self.eta_max - self.eta_min) * progress
+
+        return eta
+
+    def conditioning(self, x_prev, x_t, x_0_hat, measurement, t=None, **kwargs):
+        norm_grad, norm = self.grad_and_value(x_prev=x_prev, x_0_hat=x_0_hat, measurement=measurement, **kwargs)
+
+        if t is None:
+            raise ValueError("AdaptivePosteriorSampling requires timestep t.")
+
+        eta = _as_eta_tensor(self.get_adaptive_eta(t), norm_grad)
+
+        while eta.ndim < norm_grad.ndim:
+            eta = eta.unsqueeze(-1)
+
+        x_t = x_t - eta * norm_grad
+
+        return x_t, norm
+
+@register_conditioning_method(name='sigmoid_ps')
+class SigmoidPosteriorSampling(ConditioningMethod):
+    def __init__(self, operator, noiser, **kwargs):
+        super().__init__(operator, noiser)
+        self.eta_min = kwargs.get('eta_min', 0)
+        self.eta_max = kwargs.get('eta_max', 5)
+        self.mid = kwargs.get('mid', 0.5)
+        self.soft = kwargs.get('soft', 10)
+        self.num_timesteps = kwargs.get('num_timesteps', 1000)
+
+    def get_adaptive_eta(self, t):
+        progress = 1.0 - t.float() / float(self.num_timesteps - 1)
+
+        eta = self.eta_min + (self.eta_max - self.eta_min) / (1 + torch.exp(self.soft * (self.mid - progress)))
+
+        return eta
+
+    def conditioning(self, x_prev, x_t, x_0_hat, measurement, t=None, **kwargs):
+        norm_grad, norm = self.grad_and_value(x_prev=x_prev, x_0_hat=x_0_hat, measurement=measurement, **kwargs)
+
+        if t is None:
+            raise ValueError("AdaptivePosteriorSampling requires timestep t.")
+
+        eta = _as_eta_tensor(self.get_adaptive_eta(t), norm_grad)
+
+        while eta.ndim < norm_grad.ndim:
+            eta = eta.unsqueeze(-1)
+
+        x_t = x_t - eta * norm_grad
+
+        return x_t, norm
+
+@register_conditioning_method(name='jump_ps')
+class JumpPosteriorSampling(ConditioningMethod):
+    def __init__(self, operator, noiser, **kwargs):
+        super().__init__(operator, noiser)
+        self.eta_min = kwargs.get('eta_min', 0)
+        self.eta_max = kwargs.get('eta_max', 5)
+        self.mid = kwargs.get('mid', 0.5)
+        self.num_timesteps = kwargs.get('num_timesteps', 1000)
+
+    def get_adaptive_eta(self, t):
+        progress = 1.0 - t.float() / float(self.num_timesteps - 1)
+
+        eta = torch.where(
+            progress < self.mid,
+            torch.full_like(progress, self.eta_min),
+            torch.full_like(progress, self.eta_max),
+        )
+
+        return eta
+
+    def conditioning(self, x_prev, x_t, x_0_hat, measurement, t=None, **kwargs):
+        norm_grad, norm = self.grad_and_value(x_prev=x_prev, x_0_hat=x_0_hat, measurement=measurement, **kwargs)
+
+        if t is None:
+            raise ValueError("AdaptivePosteriorSampling requires timestep t.")
+
+        eta = _as_eta_tensor(self.get_adaptive_eta(t), norm_grad)
+
+        while eta.ndim < norm_grad.ndim:
+            eta = eta.unsqueeze(-1)
+
+        x_t = x_t - eta * norm_grad
+
+        return x_t, norm
+
+@register_conditioning_method(name='exp_ps')
+class ExpPosteriorSampling(ConditioningMethod):
+    def __init__(self, operator, noiser, **kwargs):
+        super().__init__(operator, noiser)
+        self.eta_min = kwargs.get('eta_min', 0)
+        self.eta_max = kwargs.get('eta_max', 5)
+        self.soft = kwargs.get('soft', 5)
+        self.num_timesteps = kwargs.get('num_timesteps', 1000)
+
+    def get_adaptive_eta(self, t):
+        progress = 1.0 - t.float() / float(self.num_timesteps - 1)
+
+        eta = self.eta_min + (self.eta_max - self.eta_min) * torch.exp(self.soft * (progress - 1))
+
+        return eta
+
+    def conditioning(self, x_prev, x_t, x_0_hat, measurement, t=None, **kwargs):
+        norm_grad, norm = self.grad_and_value(x_prev=x_prev, x_0_hat=x_0_hat, measurement=measurement, **kwargs)
+
+        if t is None:
+            raise ValueError("AdaptivePosteriorSampling requires timestep t.")
+
+        eta = _as_eta_tensor(self.get_adaptive_eta(t), norm_grad)
+
+        while eta.ndim < norm_grad.ndim:
+            eta = eta.unsqueeze(-1)
+
+        x_t = x_t - eta * norm_grad
+
+        return x_t, norm
+
 @register_conditioning_method(name='ps+')
 class PosteriorSamplingPlus(ConditioningMethod):
     def __init__(self, operator, noiser, **kwargs):
@@ -138,13 +310,19 @@ class PosteriorSamplingPlus(ConditioningMethod):
         self.scale = kwargs.get('scale', 1.0)
 
     def conditioning(self, x_prev, x_t, x_0_hat, measurement, **kwargs):
-        norm = 0
-        for _ in range(self.num_sampling):
-            # TODO: use noiser?
-            x_0_hat_noise = x_0_hat + 0.05 * torch.rand_like(x_0_hat)
-            difference = measurement - self.operator.forward(x_0_hat_noise)
-            norm += torch.linalg.norm(difference) / self.num_sampling
+        batch_size = x_t.shape[0]
+        # Initialize per-sample norm tensor
+        norm_total = torch.zeros(batch_size, device=x_t.device)
         
-        norm_grad = torch.autograd.grad(outputs=norm, inputs=x_prev)[0]
+        for _ in range(self.num_sampling):
+            # Use noiser's sigma if it's Gaussian, otherwise default to a small value
+            sigma = getattr(self.noiser, 'sigma', 0.05)
+            x_0_hat_noise = x_0_hat + sigma * torch.randn_like(x_0_hat)
+            difference = measurement - self.operator.forward(x_0_hat_noise, **kwargs)
+            # Per-sample L2 norm
+            norm_total += torch.linalg.norm(difference.reshape(batch_size, -1), dim=1) / self.num_sampling
+        
+        # Use sum() to get individual gradients for each sample
+        norm_grad = torch.autograd.grad(outputs=norm_total.sum(), inputs=x_prev)[0]
         x_t -= norm_grad * self.scale
-        return x_t, norm
+        return x_t, norm_total

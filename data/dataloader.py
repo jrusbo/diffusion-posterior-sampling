@@ -25,12 +25,14 @@ def get_dataset(name: str, root: str, **kwargs):
 def get_dataloader(dataset: VisionDataset,
                    batch_size: int, 
                    num_workers: int, 
-                   train: bool):
+                   train: bool,
+                   **kwargs):
     dataloader = DataLoader(dataset, 
                             batch_size, 
                             shuffle=train, 
                             num_workers=num_workers, 
-                            drop_last=train)
+                            drop_last=train,
+                            **kwargs)
     return dataloader
 
 

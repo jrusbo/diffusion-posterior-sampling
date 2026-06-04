@@ -20,6 +20,9 @@ from .nn import (
 )
 
 
+from util.logger import get_logger
+logger = get_logger()
+
 NUM_CLASSES = 1000
 
 def create_model(
@@ -40,6 +43,7 @@ def create_model(
     use_fp16=False,
     use_new_attention_order=False,
     model_path='',
+    **kwargs,
 ):
     if channel_mult == "":
         if image_size == 512:
@@ -87,7 +91,7 @@ def create_model(
     try:
         model.load_state_dict(th.load(model_path, map_location='cpu'))
     except Exception as e:
-        print(f"Got exception: {e} / Randomly initialize")
+        logger.error(f"Got exception: {e} / Randomly initialize")
     return model
 
 class AttentionPool2d(nn.Module):
@@ -968,7 +972,7 @@ class EncoderUNetModel(nn.Module):
 class NLayerDiscriminator(nn.Module):
     def __init__(self, input_nc, ndf=64, n_layers=3, norm_layer=nn.BatchNorm2d, use_sigmoid=False):
         super(NLayerDiscriminator, self).__init__()
-        if type(norm_layer) == functools.partial:
+        if isinstance(norm_layer, functools.partial):
             use_bias = norm_layer.func == nn.InstanceNorm2d
         else:
             use_bias = norm_layer == nn.InstanceNorm2d

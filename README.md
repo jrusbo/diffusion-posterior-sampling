@@ -81,15 +81,41 @@ uv sync --active
 
 ### 4) Inference
 
+#### sample_condition.py
+
 ```
-python3 sample_condition.py \
+uv run sample_condition.py \
 --model_config=configs/model_config.yaml \
 --diffusion_config=configs/diffusion_config.yaml \
---task_config={TASK-CONFIG};
+--task_config=configs/motion_deblur_config.yaml \
+--save_dir=./results/motion_blur_baseline \
+--num_runs=10
 ```
 
+#### sample_condition_rl.py
+
+```
+uv run sample_condition_rl.py \
+--model_config=configs/model_config.yaml \
+--diffusion_config=configs/diffusion_config.yaml \
+--task_config=configs/motion_blur_rl_config.yaml \
+--policy_weights=models/optimized_eta_policy.pth \
+--save_dir=./results/motion_blur_rl \
+--num_runs=10
+```
 
 :speaker: For imagenet, use configs/imagenet_model_config.yaml
+
+#### Reproducibility
+The `seed` parameter in `diffusion_config.yaml` ensures reproducibility. When using `--num_runs > 1`, the seed is set once globally, and each run consumes the random state sequentially. This makes the entire sequence of runs reproducible, though each individual run remains unique. Note that in `sample_condition_rl.py`, resuming a partial job will reset the random state to the initial seed for the remaining runs.
+
+#### visualize_progress_metrics
+
+```
+uv run .\util\visualize_progress_metrics.py \
+--task=motion_blur_rl/motion_blur \
+--task2=motion_blur_baseline/motion_blur
+```
 
 <br />
 

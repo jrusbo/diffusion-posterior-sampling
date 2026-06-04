@@ -1,11 +1,15 @@
 conditioning:
-  method: ps
+  method: sigmoid_ps
   params:
-    scale: 0.3
+    eta_min: 0
+    eta_max: 5
+    mid: 0.45
+    soft: 15
+    num_timesteps: 1000
 
 data:
   name: ffhq
-  root: ./data/samples/
+  root: ./data/samples
 
 measurement:
   operator:

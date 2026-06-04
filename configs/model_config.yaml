@@ -18,3 +18,4 @@ use_fp16: False
 use_new_attention_order: False
 
 model_path: models/ffhq_10m.pt
+seed: null
