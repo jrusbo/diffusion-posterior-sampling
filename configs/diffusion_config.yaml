@@ -7,4 +7,4 @@ dynamic_threshold: False
 clip_denoised: True
 rescale_timesteps: False
 timestep_respacing: 1000
-seed: null
+seed: null # Set for reproducibility. In multi-run sampling, this seed is the starting point for a sequential random state.

@@ -65,6 +65,9 @@ def main():
     task_config = load_yaml(args.task_config)
     
     # Set seed
+    # Note: The seed is set once globally. When num_runs > 1, each run consumes 
+    # the random state sequentially. This means the entire sequence of runs 
+    # is reproducible as a whole, but individual runs will differ from each other.
     if diffusion_config is not None and 'seed' in diffusion_config:
         seed = diffusion_config['seed']
         if seed is not None:

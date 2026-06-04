@@ -106,6 +106,9 @@ uv run sample_condition_rl.py \
 
 :speaker: For imagenet, use configs/imagenet_model_config.yaml
 
+#### Reproducibility
+The `seed` parameter in `diffusion_config.yaml` ensures reproducibility. When using `--num_runs > 1`, the seed is set once globally, and each run consumes the random state sequentially. This makes the entire sequence of runs reproducible, though each individual run remains unique. Note that in `sample_condition_rl.py`, resuming a partial job will reset the random state to the initial seed for the remaining runs.
+
 #### visualize_progress_metrics
 
 ```
