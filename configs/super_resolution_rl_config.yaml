@@ -48,3 +48,5 @@ measurement:
   noise:
     name: gaussian
     sigma: 0.05
+seed: null
+# Note: The seed parameter in diffusion_config does nothing for training (train_rl.py), it only affects inference (sample_condition_rl.py)

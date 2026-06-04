@@ -7,3 +7,4 @@ dynamic_threshold: False
 clip_denoised: True
 rescale_timesteps: False
 timestep_respacing: 1000
+seed: null

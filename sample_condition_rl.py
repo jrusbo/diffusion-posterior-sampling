@@ -4,6 +4,8 @@ from datetime import datetime
 from pathlib import Path
 import re
 import yaml
+import random
+import numpy as np
 import torch
 import torchvision.transforms as transforms
 import matplotlib.pyplot as plt
@@ -106,6 +108,18 @@ def main():
     model_config = load_yaml(args.model_config)
     diffusion_config = load_yaml(args.diffusion_config)
     task_config = load_yaml(args.task_config)
+
+    # Set seed
+    if diffusion_config is not None and 'seed' in diffusion_config:
+        seed = diffusion_config['seed']
+        if seed is not None:
+            random.seed(seed)
+            np.random.seed(seed)
+            torch.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+            logger.info(f"Seed set to {seed}")
 
     # 2. Setup Diffusion Model & Operators
     model = create_model(**model_config).to(device)

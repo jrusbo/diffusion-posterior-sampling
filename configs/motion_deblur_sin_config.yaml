@@ -20,3 +20,4 @@ measurement:
     sigma: 0.05
 
 # uv run sample_condition.py --model_config=configs/model_config.yaml --diffusion_config=configs/diffusion_config.yaml --task_config=configs/motion_deblur_sin_config.yaml --save_dir=./results/adaptive
+seed: null

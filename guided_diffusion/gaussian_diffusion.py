@@ -54,7 +54,8 @@ def create_sampler(sampler,
                    dynamic_threshold,
                    clip_denoised,
                    rescale_timesteps,
-                   timestep_respacing=""):
+                   timestep_respacing="",
+                   **kwargs):
     
     sampler = get_sampler(name=sampler)
     

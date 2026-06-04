@@ -16,3 +16,4 @@ measurement:
   noise: 
     name: gaussian
     sigma: 0.05
+seed: null
