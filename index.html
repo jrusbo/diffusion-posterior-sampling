@@ -78,6 +78,49 @@
   <script defer src="static/js/bulma-slider.min.js"></script>
   <script defer src="static/js/index.js"></script>
 
+  <style>
+    .comparison-grid figure img {
+      width: 100%;
+      max-width: 220px;
+      height: 220px;
+      object-fit: cover;
+      border-radius: 8px;
+    }
+
+    .generation-grid figure img {
+      width: 100%;
+      max-width: 180px;
+      height: 180px;
+      object-fit: cover;
+      border-radius: 8px;
+    }
+
+    figure figcaption {
+      margin-top: 0.5rem;
+      font-size: 1rem;
+    }
+
+    .result-figure {
+      margin-top: 2rem;
+      margin-bottom: 2rem;
+    }
+
+    .equation-box {
+      margin: 1.5rem 0;
+      padding: 1rem;
+      border-radius: 8px;
+      background: #f7f7f7;
+      font-size: 1.1rem;
+      text-align: center;
+      overflow-x: auto;
+    }
+
+    .small-note {
+      font-size: 0.95rem;
+      color: #555;
+    }
+  </style>
+
   <!-- Structured Data for Academic Project -->
   <script type="application/ld+json">
   {
@@ -182,9 +225,16 @@
                   </span>
 
                   <span class="link-block">
-                    <a href="#results" class="external-link button is-normal is-rounded is-dark">
+                    <a href="#problem-formulation" class="external-link button is-normal is-rounded is-dark">
+                      <span class="icon"><i class="fas fa-project-diagram"></i></span>
+                      <span>Problem</span>
+                    </a>
+                  </span>
+
+                  <span class="link-block">
+                    <a href="#empirical-findings" class="external-link button is-normal is-rounded is-dark">
                       <span class="icon"><i class="fas fa-chart-line"></i></span>
-                      <span>Results</span>
+                      <span>Findings</span>
                     </a>
                   </span>
 
@@ -203,57 +253,56 @@
       </div>
     </section>
 
-
     <!-- Main Visual Comparison -->
     <section class="hero teaser">
       <div class="container is-max-desktop">
         <div class="hero-body">
 
-          <h2 class="title is-3 has-text-centered">Visual Comparison</h2>
+          <div class="comparison-grid">
+            <div class="columns is-centered is-variable is-3">
+              <div class="column has-text-centered">
+                <figure>
+                  <img src="static/images/measurement.png"
+                       alt="Degraded measurement"
+                       loading="lazy">
+                  <figcaption>
+                    <strong>Measurement</strong>
+                  </figcaption>
+                </figure>
+              </div>
 
-          <div class="columns is-centered is-variable is-3">
-            <div class="column has-text-centered">
-              <figure>
-                <img src="static/images/measurement.png"
-                     alt="Degraded measurement"
-                     loading="lazy">
-                <figcaption>
-                  <strong>Measurement</strong>
-                </figcaption>
-              </figure>
-            </div>
+              <div class="column has-text-centered">
+                <figure>
+                  <img src="static/images/ground_truth.png"
+                       alt="Ground-truth image"
+                       loading="lazy">
+                  <figcaption>
+                    <strong>Ground Truth</strong>
+                  </figcaption>
+                </figure>
+              </div>
 
-            <div class="column has-text-centered">
-              <figure>
-                <img src="static/images/ground_truth.png"
-                     alt="Ground-truth image"
-                     loading="lazy">
-                <figcaption>
-                  <strong>Ground Truth</strong>
-                </figcaption>
-              </figure>
-            </div>
+              <div class="column has-text-centered">
+                <figure>
+                  <img src="static/images/DPS.png"
+                       alt="DPS baseline reconstruction"
+                       loading="lazy">
+                  <figcaption>
+                    <strong>DPS</strong>
+                  </figcaption>
+                </figure>
+              </div>
 
-            <div class="column has-text-centered">
-              <figure>
-                <img src="static/images/DPS.png"
-                     alt="DPS baseline reconstruction"
-                     loading="lazy">
-                <figcaption>
-                  <strong>DPS</strong>
-                </figcaption>
-              </figure>
-            </div>
-
-            <div class="column has-text-centered">
-              <figure>
-                <img src="static/images/RL.png"
-                     alt="Our RL-based reconstruction"
-                     loading="lazy">
-                <figcaption>
-                  <strong>Ours / RL</strong>
-                </figcaption>
-              </figure>
+              <div class="column has-text-centered">
+                <figure>
+                  <img src="static/images/RL.png"
+                       alt="Our RL-based reconstruction"
+                       loading="lazy">
+                  <figcaption>
+                    <strong>Ours / RL</strong>
+                  </figcaption>
+                </figure>
+              </div>
             </div>
           </div>
 
@@ -267,7 +316,6 @@
       </div>
     </section>
 
-
     <!-- Abstract -->
     <section class="section hero is-light">
       <div class="container is-max-desktop">
@@ -276,17 +324,18 @@
             <h2 class="title is-3">Abstract</h2>
             <div class="content has-text-justified">
               <p>
-                Inverse problems aim to recover an unknown signal from noisy or incomplete measurements.
-                Recent diffusion-based methods, such as Diffusion Posterior Sampling (DPS), solve these problems
-                by combining generative priors with measurement-consistency updates. However, the strength of
-                measurement guidance is usually manually tuned and fixed by heuristic schedules.
+                We study diffusion-based inverse problem reconstruction, where the goal is to recover a clean signal
+                from noisy or incomplete measurements. Existing methods such as Diffusion Posterior Sampling (DPS)
+                combine diffusion priors with measurement-consistency updates, but their performance strongly depends
+                on the manually selected measurement guidance strength.
               </p>
               <p>
-                In this project, we formulate diffusion-based inverse problem reconstruction as a sequential
-                decision-making problem. A reinforcement learning agent adaptively controls the measurement
-                guidance strength during diffusion sampling, allowing the reconstruction trajectory to balance
-                generative prior guidance and measurement consistency. Experiments on image restoration tasks
-                show that the learned adaptive policy improves reconstruction quality over the baseline DPS method.
+                In this project, we formulate the reconstruction process as a sequential decision-making problem and
+                use reinforcement learning to control the measurement guidance strength during diffusion sampling.
+                The learned policy not only improves reconstruction quality over the DPS baseline, but also reveals
+                an important scheduling behavior: the guidance strength should be small in the early noisy stage and
+                become larger in the later reconstruction stage. This suggests that eta scheduling plays a crucial role
+                in balancing generative prior guidance and measurement consistency for inverse problems.
               </p>
             </div>
           </div>
@@ -294,17 +343,82 @@
       </div>
     </section>
 
+    <!-- Problem Formulation -->
+    <section class="section" id="problem-formulation">
+      <div class="container is-max-desktop">
+        <h2 class="title is-3">Problem Formulation</h2>
+        <div class="content has-text-justified">
+          <p>
+            We consider a general inverse problem where the goal is to recover an unknown clean signal
+            <em>x</em> from a noisy or incomplete measurement <em>y</em>. The measurement process is modeled as
+          </p>
+
+          <div class="equation-box">
+            <strong>y = A(x) + n,</strong>
+          </div>
+
+          <p>
+            where <em>A(·)</em> denotes the forward measurement operator and <em>n</em> represents measurement noise.
+            Examples include image deblurring, inpainting, and super-resolution. Diffusion-based reconstruction methods
+            use a pretrained diffusion model as a generative prior and recover the clean image through a reverse sampling
+            trajectory
+          </p>
+
+          <div class="equation-box">
+            <strong>x<sub>T</sub> &rarr; x<sub>T-1</sub> &rarr; &middot;&middot;&middot; &rarr; x<sub>0</sub>.</strong>
+          </div>
+
+          <p>
+            During this reverse process, the diffusion model encourages samples to lie on the natural image manifold,
+            while a measurement-consistency term encourages the reconstruction to match the observation <em>y</em>.
+            The key challenge is how to balance these two forces over diffusion time.
+          </p>
+        </div>
+      </div>
+    </section>
+
     <!-- Method -->
-    <section class="section" id="method">
+    <section class="section hero is-light" id="method">
       <div class="container is-max-desktop">
         <h2 class="title is-3">Method</h2>
         <div class="content has-text-justified">
+          <p>
+            Diffusion Posterior Sampling introduces a measurement correction step into the reverse diffusion process.
+            A typical measurement-guided update can be written as
+          </p>
+
+          <div class="equation-box">
+            <strong>
+              x<sub>t-1</sub> =
+              x&apos;<sub>t-1</sub>
+              - &eta;<sub>t</sub>
+              &nabla;<sub>x</sub>
+              || y - A(x&#770;<sub>0</sub>) ||<sup>2</sup>.
+            </strong>
+          </div>
+
+          <p>
+            Here, <em>x&apos;<sub>t-1</sub></em> is the standard reverse diffusion update,
+            <em>x&#770;<sub>0</sub></em> is the predicted clean image, and
+            <em>&eta;<sub>t</sub></em> controls the strength of the measurement correction.
+            Existing methods usually choose <em>&eta;<sub>t</sub></em> using a fixed value or a manually designed schedule.
+            In contrast, our method learns how to adapt <em>&eta;<sub>t</sub></em> over diffusion time.
+          </p>
+
           <p>
             We model the reconstruction process as a Markov decision process. At each diffusion timestep,
             the state summarizes the current reconstruction status, including the current sample, timestep,
             and measurement consistency error. The action corresponds to the measurement guidance strength
             used in the correction step.
           </p>
+
+          <div class="equation-box">
+            <strong>
+              s<sub>t</sub> = (x<sub>t</sub>, t, || y - A(x<sub>t</sub>) ||), &nbsp;&nbsp;
+              a<sub>t</sub> = &eta;<sub>t</sub>.
+            </strong>
+          </div>
+
           <p>
             After each action, the environment performs one reverse diffusion update followed by a
             measurement-consistency correction. The policy is trained to select adaptive guidance strengths
@@ -312,7 +426,31 @@
             policy automatically determines when to increase or decrease measurement guidance during sampling.
           </p>
 
-          <figure>
+          <h3 class="title is-4">Reward Design</h3>
+          <p>
+            The reward encourages both measurement consistency and reconstruction quality. Intuitively, the agent
+            receives positive feedback when the measurement residual decreases during the reconstruction process,
+            and when the final reconstructed image has better perceptual or pixel-level quality.
+          </p>
+
+          <div class="equation-box">
+            <strong>
+              r<sub>t</sub>
+              =
+              [ || y - A(x<sub>t</sub>) ||<sup>2</sup>
+              -
+              || y - A(x<sub>t-1</sub>) ||<sup>2</sup> ]
+              + reward for final reconstruction quality.
+            </strong>
+          </div>
+
+          <p>
+            This reward design encourages the policy to discover a useful measurement-guidance schedule.
+            The learned behavior suggests that small guidance is preferred in the early noisy stage, while stronger
+            guidance becomes useful near the final reconstruction stage when the image structure is more reliable.
+          </p>
+
+          <figure class="result-figure">
             <img src="static/images/method.png"
                  alt="MDP formulation for adaptive diffusion posterior sampling"
                  loading="lazy">
@@ -324,17 +462,22 @@
       </div>
     </section>
 
-    <!-- Constant Eta Study -->
-    <section class="section hero is-light" id="constant-eta">
+    <!-- Empirical Finding I -->
+    <section class="section" id="constant-eta">
       <div class="container is-max-desktop">
-        <h2 class="title is-3">Constant Guidance Strength Study</h2>
+        <h2 class="title is-3">Empirical Finding I: Constant Guidance Strength</h2>
         <div class="content has-text-justified">
           <p>
-            Before training the RL policy, we first study how different constant measurement guidance strengths
-            affect reconstruction quality. The results show that the guidance strength is sensitive: too small
-            guidance fails to enforce measurement consistency, while too large guidance may overfit the degraded
-            measurement or noise. This motivates learning an adaptive guidance policy instead of using a fixed
-            manually tuned value.
+            Before training the RL policy, we first examine how different constant values of the measurement guidance
+            strength affect reconstruction quality. The constant-eta study is conducted on an FFHQ motion deblurring
+            task with Gaussian measurement noise and 1000 diffusion steps.
+          </p>
+
+          <p>
+            The results show that the choice of eta is highly sensitive. A very small eta provides insufficient
+            measurement correction, while an overly large eta can over-constrain the reconstruction and degrade
+            perceptual quality. This observation motivates the need for a time-dependent eta schedule rather than a
+            single fixed value throughout the diffusion process.
           </p>
 
           <div class="table-container">
@@ -402,32 +545,35 @@
       </div>
     </section>
 
-    <!-- Results -->
-    <section class="section" id="results">
+    <!-- Empirical Findings -->
+    <section class="section hero is-light" id="empirical-findings">
       <div class="container is-max-desktop">
-        <h2 class="title is-3">Results</h2>
+        <h2 class="title is-3">Empirical Findings</h2>
         <div class="content has-text-justified">
           <p>
-            On FFHQ motion deblurring, the RL-based adaptive guidance policy improves over the DPS baseline,
+            The RL-based adaptive guidance policy improves over the DPS baseline on FFHQ motion deblurring,
             increasing PSNR from 25.29 to 29.64, SSIM from 0.77 to 0.84, and reducing LPIPS from 0.25 to 0.16.
-            The learned guidance schedule varies over diffusion time and exhibits a sigmoid-like shape.
+            Beyond the quantitative improvement, the learned eta trajectory provides insight into the reconstruction
+            process: weak guidance is preferred in the early noisy stage, while stronger measurement guidance becomes
+            useful in the later stage when the image structure is more reliable.
           </p>
           <p>
-            We further evaluate different sampling budgets and observe that the RL model consistently outperforms
-            the baseline across different numbers of diffusion steps. With only 600 sampling steps, the RL method
-            achieves comparable performance to the standard 1000-step baseline, suggesting improved inference efficiency.
+            This behavior suggests that eta scheduling is not merely a hyperparameter-tuning detail, but an important
+            component of diffusion-based inverse problem solving. The RL policy can be viewed as a data-driven way to
+            discover an effective guidance schedule for balancing the diffusion prior and the measurement constraint.
           </p>
 
-          <figure>
+          <figure class="result-figure">
             <img src="static/images/rl_vs_baseline.png"
                  alt="RL adaptive guidance compared with the DPS baseline"
                  loading="lazy">
             <figcaption class="has-text-centered">
-              RL adaptive guidance improves PSNR, SSIM, and LPIPS compared with the DPS baseline.
+              The learned RL policy improves reconstruction quality and discovers an adaptive eta schedule,
+              where the guidance strength is small in the early stage and larger near the final reconstruction stage.
             </figcaption>
           </figure>
 
-          <figure>
+          <figure class="result-figure">
             <img src="static/images/steps_comparison.png"
                  alt="Comparison under different numbers of diffusion sampling steps"
                  loading="lazy">
@@ -435,86 +581,91 @@
               RL-based adaptive guidance remains effective under reduced sampling budgets.
             </figcaption>
           </figure>
-          <h3 class="title is-4 has-text-centered">Generation Trajectory</h3>
 
-          <div class="columns is-centered is-variable is-2">
-            <div class="column has-text-centered">
-              <figure>
-                <img src="static/images/gen_t1000.png"
-                     alt="Generated sample at timestep t=1000"
-                     loading="lazy">
-                <figcaption><strong>t = 1000</strong></figcaption>
-              </figure>
+          <h3 class="title is-4 has-text-centered">Generation Trajectory at Different Noise Steps</h3>
+
+          <div class="generation-grid">
+            <div class="columns is-centered is-variable is-2">
+              <div class="column has-text-centered">
+                <figure>
+                  <img src="static/images/gen_t1000.png"
+                       alt="Generated sample at timestep t=1000"
+                       loading="lazy">
+                  <figcaption><strong>t = 1000</strong></figcaption>
+                </figure>
+              </div>
+
+              <div class="column has-text-centered">
+                <figure>
+                  <img src="static/images/gen_t800.png"
+                       alt="Generated sample at timestep t=800"
+                       loading="lazy">
+                  <figcaption><strong>t = 800</strong></figcaption>
+                </figure>
+              </div>
+
+              <div class="column has-text-centered">
+                <figure>
+                  <img src="static/images/gen_t600.png"
+                       alt="Generated sample at timestep t=600"
+                       loading="lazy">
+                  <figcaption><strong>t = 600</strong></figcaption>
+                </figure>
+              </div>
             </div>
 
-            <div class="column has-text-centered">
-              <figure>
-                <img src="static/images/gen_t800.png"
-                     alt="Generated sample at timestep t=800"
-                     loading="lazy">
-                <figcaption><strong>t = 800</strong></figcaption>
-              </figure>
-            </div>
+            <div class="columns is-centered is-variable is-2">
+              <div class="column has-text-centered">
+                <figure>
+                  <img src="static/images/gen_t400.png"
+                       alt="Generated sample at timestep t=400"
+                       loading="lazy">
+                  <figcaption><strong>t = 400</strong></figcaption>
+                </figure>
+              </div>
 
-            <div class="column has-text-centered">
-              <figure>
-                <img src="static/images/gen_t600.png"
-                     alt="Generated sample at timestep t=600"
-                     loading="lazy">
-                <figcaption><strong>t = 600</strong></figcaption>
-              </figure>
-            </div>
-          </div>
+              <div class="column has-text-centered">
+                <figure>
+                  <img src="static/images/gen_t200.png"
+                       alt="Generated sample at timestep t=200"
+                       loading="lazy">
+                  <figcaption><strong>t = 200</strong></figcaption>
+                </figure>
+              </div>
 
-          <div class="columns is-centered is-variable is-2">
-            <div class="column has-text-centered">
-              <figure>
-                <img src="static/images/gen_t400.png"
-                     alt="Generated sample at timestep t=400"
-                     loading="lazy">
-                <figcaption><strong>t = 400</strong></figcaption>
-              </figure>
-            </div>
-
-            <div class="column has-text-centered">
-              <figure>
-                <img src="static/images/gen_t200.png"
-                     alt="Generated sample at timestep t=200"
-                     loading="lazy">
-                <figcaption><strong>t = 200</strong></figcaption>
-              </figure>
-            </div>
-
-            <div class="column has-text-centered">
-              <figure>
-                <img src="static/images/gen_t0.png"
-                     alt="Final generated reconstruction at timestep t=0"
-                     loading="lazy">
-                <figcaption><strong>t = 0</strong></figcaption>
-              </figure>
+              <div class="column has-text-centered">
+                <figure>
+                  <img src="static/images/gen_t0.png"
+                       alt="Final generated reconstruction at timestep t=0"
+                       loading="lazy">
+                  <figcaption><strong>t = 0</strong></figcaption>
+                </figure>
+              </div>
             </div>
           </div>
 
           <p class="has-text-centered">
-            Reconstruction trajectory at selected diffusion timesteps. The sample gradually evolves from noisy initialization
-            to the final reconstruction under the learned RL-based adaptive guidance policy.
+            Reconstruction trajectory at selected diffusion timesteps. The intermediate results show how the sample evolves
+            from a noisy initial state to the final reconstruction. This visualization helps explain why eta scheduling matters:
+            early steps operate on highly noisy samples, while later steps contain clearer image structures and can benefit from
+            stronger measurement guidance.
           </p>
         </div>
       </div>
     </section>
 
-    <!-- Task Comparison -->
-    <section class="section hero is-light">
+    <!-- Empirical Finding IV -->
+    <section class="section">
       <div class="container is-max-desktop">
-        <h2 class="title is-3">Task Comparison</h2>
+        <h2 class="title is-3">Empirical Finding IV: Task-Level Comparison</h2>
         <div class="content has-text-justified">
           <p>
-            We evaluate the proposed policy on multiple restoration tasks, including motion blur, Gaussian blur,
-            random inpainting, box inpainting, and super-resolution. The RL policy generally improves reconstruction
-            quality over the DPS baseline, with less consistent improvement on the box inpainting task.
+            We further evaluate the learned policy across multiple image restoration tasks, including motion blur, Gaussian blur,
+            random inpainting, box inpainting, and super-resolution. The results show that adaptive eta scheduling generally
+            improves reconstruction quality over the DPS baseline, although the improvement is less consistent for box inpainting.
           </p>
 
-          <figure>
+          <figure class="result-figure">
             <img src="static/images/task_comparison.png"
                  alt="Quantitative comparison across image restoration tasks"
                  loading="lazy">
@@ -522,6 +673,27 @@
               Quantitative comparison across different inverse problem tasks.
             </figcaption>
           </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- Conclusion -->
+    <section class="section hero is-light" id="conclusion">
+      <div class="container is-max-desktop">
+        <h2 class="title is-3">Conclusion</h2>
+        <div class="content has-text-justified">
+          <p>
+            This project demonstrates that reinforcement learning can be used to solve diffusion-based inverse problems
+            by learning an adaptive measurement guidance policy. Instead of relying on a manually selected or fixed eta,
+            the learned policy discovers a time-dependent guidance schedule that improves reconstruction quality over
+            the DPS baseline.
+          </p>
+          <p>
+            More importantly, the learned policy provides an interpretable insight into the reconstruction process:
+            eta should remain small in the early noisy stage and become larger near the end of sampling, when the image
+            structure is more reliable. This suggests that guidance scheduling is a key factor in diffusion posterior
+            sampling, and that RL can serve as a useful tool for discovering effective reconstruction strategies.
+          </p>
         </div>
       </div>
     </section>
