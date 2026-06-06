@@ -1,3 +1,4 @@
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -186,6 +187,13 @@
                       <span>Results</span>
                     </a>
                   </span>
+
+                  <span class="link-block">
+                    <a href="#constant-eta" class="external-link button is-normal is-rounded is-dark">
+                      <span class="icon"><i class="fas fa-table"></i></span>
+                      <span>Constant &eta;</span>
+                    </a>
+                  </span>
                 </div>
               </div>
 
@@ -195,20 +203,70 @@
       </div>
     </section>
 
-    <!-- Teaser -->
+
+    <!-- Main Visual Comparison -->
     <section class="hero teaser">
       <div class="container is-max-desktop">
         <div class="hero-body">
-          <img src="static/images/teaser.png"
-               alt="Overview of RL-based adaptive measurement guidance for diffusion posterior sampling"
-               loading="lazy">
+
+          <h2 class="title is-3 has-text-centered">Visual Comparison</h2>
+
+          <div class="columns is-centered is-variable is-3">
+            <div class="column has-text-centered">
+              <figure>
+                <img src="static/images/measurement.png"
+                     alt="Degraded measurement"
+                     loading="lazy">
+                <figcaption>
+                  <strong>Measurement</strong>
+                </figcaption>
+              </figure>
+            </div>
+
+            <div class="column has-text-centered">
+              <figure>
+                <img src="static/images/ground_truth.png"
+                     alt="Ground-truth image"
+                     loading="lazy">
+                <figcaption>
+                  <strong>Ground Truth</strong>
+                </figcaption>
+              </figure>
+            </div>
+
+            <div class="column has-text-centered">
+              <figure>
+                <img src="static/images/DPS.png"
+                     alt="DPS baseline reconstruction"
+                     loading="lazy">
+                <figcaption>
+                  <strong>DPS</strong>
+                </figcaption>
+              </figure>
+            </div>
+
+            <div class="column has-text-centered">
+              <figure>
+                <img src="static/images/RL.png"
+                     alt="Our RL-based reconstruction"
+                     loading="lazy">
+                <figcaption>
+                  <strong>Ours / RL</strong>
+                </figcaption>
+              </figure>
+            </div>
+          </div>
+
           <h2 class="subtitle has-text-centered">
             We formulate diffusion-based inverse problem reconstruction as a sequential decision-making problem.
-            The RL policy adaptively controls the measurement guidance strength during diffusion sampling.
+            The RL policy adaptively controls the measurement guidance strength during diffusion sampling,
+            leading to improved reconstruction quality over the DPS baseline.
           </h2>
+
         </div>
       </div>
     </section>
+
 
     <!-- Abstract -->
     <section class="section hero is-light">
@@ -266,8 +324,86 @@
       </div>
     </section>
 
+    <!-- Constant Eta Study -->
+    <section class="section hero is-light" id="constant-eta">
+      <div class="container is-max-desktop">
+        <h2 class="title is-3">Constant Guidance Strength Study</h2>
+        <div class="content has-text-justified">
+          <p>
+            Before training the RL policy, we first study how different constant measurement guidance strengths
+            affect reconstruction quality. The results show that the guidance strength is sensitive: too small
+            guidance fails to enforce measurement consistency, while too large guidance may overfit the degraded
+            measurement or noise. This motivates learning an adaptive guidance policy instead of using a fixed
+            manually tuned value.
+          </p>
+
+          <div class="table-container">
+            <table class="table is-bordered is-striped is-hoverable is-fullwidth has-text-centered">
+              <thead>
+                <tr>
+                  <th>&eta;</th>
+                  <th>PSNR &uarr;</th>
+                  <th>SSIM &uarr;</th>
+                  <th>LPIPS &darr;</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>0.01</td>
+                  <td>17.15 &plusmn; 0.88</td>
+                  <td>0.60 &plusmn; 0.05</td>
+                  <td>0.49 &plusmn; 0.04</td>
+                </tr>
+                <tr>
+                  <td>0.1</td>
+                  <td>22.86 &plusmn; 1.88</td>
+                  <td>0.73 &plusmn; 0.03</td>
+                  <td>0.31 &plusmn; 0.03</td>
+                </tr>
+                <tr>
+                  <td>0.3</td>
+                  <td>23.72 &plusmn; 2.48</td>
+                  <td>0.67 &plusmn; 0.12</td>
+                  <td>0.32 &plusmn; 0.08</td>
+                </tr>
+                <tr>
+                  <td>0.5</td>
+                  <td>24.78 &plusmn; 2.38</td>
+                  <td>0.76 &plusmn; 0.04</td>
+                  <td>0.24 &plusmn; 0.03</td>
+                </tr>
+                <tr>
+                  <td>1</td>
+                  <td><strong>26.50 &plusmn; 3.28</strong></td>
+                  <td><strong>0.80 &plusmn; 0.05</strong></td>
+                  <td><strong>0.22 &plusmn; 0.04</strong></td>
+                </tr>
+                <tr>
+                  <td>5</td>
+                  <td>23.24 &plusmn; 5.95</td>
+                  <td>0.67 &plusmn; 0.22</td>
+                  <td>0.33 &plusmn; 0.19</td>
+                </tr>
+                <tr>
+                  <td>10</td>
+                  <td>20.53 &plusmn; 6.80</td>
+                  <td>0.50 &plusmn; 0.23</td>
+                  <td>0.48 &plusmn; 0.19</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p class="has-text-centered">
+            <strong>Table 1.</strong> Quantitative comparison of different constant guidance strengths on FFHQ motion deblurring.
+            Higher PSNR and SSIM are better, while lower LPIPS is better.
+          </p>
+        </div>
+      </div>
+    </section>
+
     <!-- Results -->
-    <section class="section hero is-light" id="results">
+    <section class="section" id="results">
       <div class="container is-max-desktop">
         <h2 class="title is-3">Results</h2>
         <div class="content has-text-justified">
@@ -299,12 +435,76 @@
               RL-based adaptive guidance remains effective under reduced sampling budgets.
             </figcaption>
           </figure>
+          <h3 class="title is-4 has-text-centered">Generation Trajectory</h3>
+
+          <div class="columns is-centered is-variable is-2">
+            <div class="column has-text-centered">
+              <figure>
+                <img src="static/images/gen_t1000.png"
+                     alt="Generated sample at timestep t=1000"
+                     loading="lazy">
+                <figcaption><strong>t = 1000</strong></figcaption>
+              </figure>
+            </div>
+
+            <div class="column has-text-centered">
+              <figure>
+                <img src="static/images/gen_t800.png"
+                     alt="Generated sample at timestep t=800"
+                     loading="lazy">
+                <figcaption><strong>t = 800</strong></figcaption>
+              </figure>
+            </div>
+
+            <div class="column has-text-centered">
+              <figure>
+                <img src="static/images/gen_t600.png"
+                     alt="Generated sample at timestep t=600"
+                     loading="lazy">
+                <figcaption><strong>t = 600</strong></figcaption>
+              </figure>
+            </div>
+          </div>
+
+          <div class="columns is-centered is-variable is-2">
+            <div class="column has-text-centered">
+              <figure>
+                <img src="static/images/gen_t400.png"
+                     alt="Generated sample at timestep t=400"
+                     loading="lazy">
+                <figcaption><strong>t = 400</strong></figcaption>
+              </figure>
+            </div>
+
+            <div class="column has-text-centered">
+              <figure>
+                <img src="static/images/gen_t200.png"
+                     alt="Generated sample at timestep t=200"
+                     loading="lazy">
+                <figcaption><strong>t = 200</strong></figcaption>
+              </figure>
+            </div>
+
+            <div class="column has-text-centered">
+              <figure>
+                <img src="static/images/gen_t0.png"
+                     alt="Final generated reconstruction at timestep t=0"
+                     loading="lazy">
+                <figcaption><strong>t = 0</strong></figcaption>
+              </figure>
+            </div>
+          </div>
+
+          <p class="has-text-centered">
+            Reconstruction trajectory at selected diffusion timesteps. The sample gradually evolves from noisy initialization
+            to the final reconstruction under the learned RL-based adaptive guidance policy.
+          </p>
         </div>
       </div>
     </section>
 
     <!-- Task Comparison -->
-    <section class="section">
+    <section class="section hero is-light">
       <div class="container is-max-desktop">
         <h2 class="title is-3">Task Comparison</h2>
         <div class="content has-text-justified">
@@ -367,3 +567,4 @@
   </footer>
 </body>
 </html>
+```
