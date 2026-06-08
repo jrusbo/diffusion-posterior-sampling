@@ -414,7 +414,7 @@
 
           <div class="equation-box">
             <strong>
-              s<sub>t</sub> = (x<sub>t</sub>, t, || y - A(x<sub>t</sub>) ||), &nbsp;&nbsp;
+              s<sub>t</sub> = (t / T, || y - A(x<sub>t</sub>) ||), &nbsp;&nbsp;
               a<sub>t</sub> = &eta;<sub>t</sub>.
             </strong>
           </div>
@@ -436,11 +436,10 @@
           <div class="equation-box">
             <strong>
               r<sub>t</sub>
-              =
-              [ || y - A(x<sub>t</sub>) ||<sup>2</sup>
-              -
-              || y - A(x<sub>t-1</sub>) ||<sup>2</sup> ]
-              + reward for final reconstruction quality.
+              = 
+              w<sub>psnr</sub> * PSNR - 
+              w<sub>consistency</sub> * MSE - 
+              w<sub>total variation</sub> * TV.
             </strong>
           </div>
 
